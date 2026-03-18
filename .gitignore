@@ -1,0 +1,23 @@
+# Build
+build_test/
+*.o
+*.so
+*.a
+*.out
+
+# Executables
+dose_validator
+process_tdms_cpp
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
