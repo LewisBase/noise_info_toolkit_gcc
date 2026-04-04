@@ -363,36 +363,7 @@ std::vector<BiquadCoefficients> tf2sos(const std::vector<double>& b,
     return sos;
 }
 
-} // namespace filter_design
-
-// Octave band filter design
-namespace octave_filters {
-
-// Design 1/3 octave band filter
-IIRCoefficients design_third_octave(double center_freq, 
-                                    double sample_rate,
-                                    int order) {
-    // 1/3 octave bandwidth factor
-    double bandwidth = 0.231;  // log2(2^(1/3)) = 1/3 octave
-    double f_lower = center_freq * std::pow(2.0, -bandwidth/2.0);
-    double f_upper = center_freq * std::pow(2.0, bandwidth/2.0);
-    
-    // Design bandpass filter
-    return filter_design::bandpass(f_lower, f_upper, sample_rate, order);
-}
-
-// Design octave band filter
-IIRCoefficients design_octave(double center_freq,
-                              double sample_rate,
-                              int order) {
-    // Full octave bandwidth
-    double f_lower = center_freq / std::sqrt(2.0);
-    double f_upper = center_freq * std::sqrt(2.0);
-    
-    return filter_design::bandpass(f_lower, f_upper, sample_rate, order);
-}
-
-// Bandpass filter design using Butterworth
+// Bandpass filter design using Butterworth (moved from octave_filters to match header)
 IIRCoefficients bandpass(double low_freq, 
                          double high_freq,
                          double sample_rate,
@@ -433,6 +404,43 @@ IIRCoefficients bandpass(double low_freq,
     a1 /= a0; a2 /= a0; a0 = 1.0;
     
     return {{b0, b1, b2}, {a0, a1, a2}};
+}
+
+} // namespace filter_design
+
+// Octave band filter design
+namespace octave_filters {
+
+// Bandpass filter in octave_filters - forward to filter_design
+IIRCoefficients bandpass(double low_freq,
+                         double high_freq,
+                         double sample_rate,
+                         int order) {
+    return filter_design::bandpass(low_freq, high_freq, sample_rate, order);
+}
+
+// Design 1/3 octave band filter
+IIRCoefficients design_third_octave(double center_freq,
+                                    double sample_rate,
+                                    int order) {
+    // 1/3 octave bandwidth factor
+    double bandwidth = 0.231;  // log2(2^(1/3)) = 1/3 octave
+    double f_lower = center_freq * std::pow(2.0, -bandwidth/2.0);
+    double f_upper = center_freq * std::pow(2.0, bandwidth/2.0);
+    
+    // Design bandpass filter
+    return filter_design::bandpass(f_lower, f_upper, sample_rate, order);
+}
+
+// Design octave band filter
+IIRCoefficients design_octave(double center_freq,
+                              double sample_rate,
+                              int order) {
+    // Full octave bandwidth
+    double f_lower = center_freq / std::sqrt(2.0);
+    double f_upper = center_freq * std::sqrt(2.0);
+    
+    return filter_design::bandpass(f_lower, f_upper, sample_rate, order);
 }
 
 // Get 1/3 octave center frequencies (ISO preferred numbers)
