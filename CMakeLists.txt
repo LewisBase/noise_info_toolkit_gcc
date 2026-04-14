@@ -1,57 +1,55 @@
 cmake_minimum_required(VERSION 3.14)
-project(noise_info_toolkit VERSION 1.0.0 LANGUAGES CXX)
+project(noise_info_toolkit_gcc VERSION 2.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Options
 option(BUILD_TESTS "Build tests" ON)
-option(BUILD_SHARED_LIBS "Build shared libraries" ON)
+option(BUILD_EXAMPLES "Build examples" ON)
 
 # Find packages
 find_package(Threads REQUIRED)
-find_package(SQLite3 REQUIRED)
+find_package(SQLite3 QUIET)  # Optional - not needed for core library
 
 # Include directories
 include_directories(${CMAKE_SOURCE_DIR}/include)
-include_directories(${CMAKE_SOURCE_DIR}/third_party)
 
-# Source files
+# Core source files (only noise calculation modules)
 set(CORE_SOURCES
-    src/audio_processor.cpp
+    src/noise_processor.cpp
     src/dose_calculator.cpp
-    src/event_detector.cpp
-    src/event_processor.cpp
-    src/tdms_converter.cpp
-    src/time_history_processor.cpp
-    src/ring_buffer.cpp
-    src/database.cpp
     src/signal_utils.cpp
-    src/wav_reader.cpp
     src/iir_filter.cpp
 )
 
 # Create library
-if(BUILD_SHARED_LIBS)
-    add_library(noise_toolkit SHARED ${CORE_SOURCES})
-else()
-    add_library(noise_toolkit STATIC ${CORE_SOURCES})
-endif()
+add_library(noise_toolkit STATIC ${CORE_SOURCES})
 
 target_link_libraries(noise_toolkit
     Threads::Threads
-    SQLite::SQLite3
     ${CMAKE_DL_LIBS}
 )
-
-# Example executable
-add_executable(noise_toolkit_example examples/main.cpp)
-target_link_libraries(noise_toolkit_example noise_toolkit)
 
 # Tests
 if(BUILD_TESTS)
     enable_testing()
-    add_subdirectory(tests)
+    
+    # Noise processor unit tests
+    add_executable(test_noise_processor tests/test_noise_processor.cpp)
+    target_link_libraries(test_noise_processor noise_toolkit)
+    add_test(NAME test_noise_processor COMMAND test_noise_processor)
+    
+    # Dose calculator unit tests (standalone, no library needed)
+    add_executable(dose_validator dose_validator.cpp)
+    target_link_libraries(dose_validator Threads::Threads)
+    add_test(NAME dose_validator COMMAND dose_validator)
+endif()
+
+# Examples
+if(BUILD_EXAMPLES)
+    add_executable(noise_toolkit_example examples/main.cpp)
+    target_link_libraries(noise_toolkit_example noise_toolkit)
 endif()
 
 # Install

@@ -1,21 +1,53 @@
 # noise_info_toolkit_gcc
 
-噪声剂量计算工具包的C++实现，从Python版本移植而来。
+C++ 实现的轻量级噪声信息计算工具包（v2.0），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
 
-> **项目来源**: 本项目由 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来，用于职业噪声暴露评估。
+## 设计目标
 
-## 功能特性
+纯噪声信息计算，提供两个简洁接口，不包含任何存储、文件解析、事件检测等功能。
 
-- **噪声剂量计算**: 支持 NIOSH、OSHA_PEL、OSHA_HCA、EU_ISO 四种国际标准
-- **声学指标计算**: Leq、LAeq、LCeq、Peak、TWA、LEX,8h 等
-- **事件检测**: 脉冲噪声事件检测（支持LEQ/Peak/Slope三种触发模式）
-- **时序处理**: 每秒时间历史数据处理和存储
-- **音频处理**: WAV文件读写、1/3倍频程分析、A/C计权滤波
-- **数据存储**: SQLite数据库存储（与Python版本兼容的表结构）
+## 两个核心接口
 
-## 快速开始
+### 接口一：每秒调用 — `process_one_second(buffer_start, buffer_end)`
 
-### 构建项目
+传入一秒音频原始数据指针（float 或 double），返回该秒所有 **81 个指标**：
+
+```cpp
+#include "noise_processor.hpp"
+
+using namespace noise_toolkit;
+
+NoiseProcessor processor(48000);  // sample_rate
+
+// 传入 float 或 double 缓冲区指针
+SecondMetrics m = processor.process_one_second(buffer_start, buffer_end);
+
+// m 包含 81 个指标：
+//   - 元数据: timestamp, duration_s
+//   - 声级: LAeq, LCeq, LZeq, LAFmax, LZpeak, LCpeak
+//   - 剂量: dose_frac_niosh/osha_pel/osha_hca/eu_iso
+//   - QC: overload_flag, underrange_flag, wearing_state
+//   - 峰度: kurtosis_total, kurtosis_a_weighted, kurtosis_c_weighted, beta_kurtosis
+//   - 原始矩: n_samples, sum_x/s1, sum_x2/s2, sum_x3/s3, sum_x4/s4
+//   - 1/3倍频程SPL: freq_63hz_spl ~ freq_16khz_spl (9个频段)
+//   - 1/3倍频程矩S1-S4: 每个频段5个值 × 9个频段 = 45个字段
+//     其中包括 n, s1, s2, s3, s4 (用于精确峰度合成)
+```
+
+### 接口二：每分钟调用 — `aggregate_minute_metrics(second_metrics_array, count)`
+
+传入该分钟 60 个 `SecondMetrics`，返回聚合后的分钟指标 `MinuteMetrics`：
+
+```cpp
+std::array<SecondMetrics, 60> seconds;
+for (int i = 0; i < 60; ++i) {
+    seconds[i] = processor.process_one_second(...);
+}
+
+MinuteMetrics minute = processor.aggregate_minute_metrics(seconds);
+```
+
+## 构建
 
 ```bash
 cd build_test
@@ -23,170 +55,81 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 ```
 
-### 独立验证程序
-
-项目包含两个独立的验证程序（单文件，不依赖库）：
+## 运行测试
 
 ```bash
-# 理论值验证
-./dose_validator
-
-# TDMS文件处理对比
-./process_tdms_cpp
+./test_noise_processor    # 10个单元测试（全部通过）
+./noise_toolkit_example   # 示例程序
+./dose_validator          # 剂量计算理论值验证
 ```
 
-### 运行完整测试
+## 指标列表（81个每秒指标）
 
-```bash
-# 运行所有测试
-./noise_toolkit_example
+| 类别 | 数量 | 字段 |
+|------|------|------|
+| 元数据 | 2 | timestamp, duration_s |
+| 声级 | 6 | LAeq, LCeq, LZeq, LAFmax, LZpeak, LCpeak |
+| 剂量增量 | 4 | dose_frac_niosh, dose_frac_osha_pel, dose_frac_osha_hca, dose_frac_eu_iso |
+| 质量控制 | 3 | overload_flag, underrange_flag, wearing_state |
+| 峰度 | 4 | kurtosis_total, kurtosis_a_weighted, kurtosis_c_weighted, beta_kurtosis |
+| 原始矩统计量 | 5 | n_samples, sum_x, sum_x2, sum_x3, sum_x4 |
+| 1/3倍频程SPL | 9 | freq_63hz_spl ~ freq_16khz_spl |
+| 1/3倍频程矩S1-S4 | 45 | 每个频段(n,s1,s2,s3,s4) × 9个频段 |
+| **合计** | **81** | |
 
-# 运行特定测试
-./noise_toolkit_example dose      # 剂量计算器
-./noise_toolkit_example audio     # 音频处理器
-./noise_toolkit_example time      # 时序处理器
-./noise_toolkit_example buffer    # 环形缓冲区
-./noise_toolkit_example database  # 数据库
+## 标准参数
+
+| 标准 | 准则级 (dBA) | 交换率 (dB) | 参考时长 (h) |
+|------|-------------|-------------|-------------|
+| NIOSH | 85 | 3 | 8 |
+| OSHA_PEL | 90 | 5 | 8 |
+| OSHA_HCA | 85 | 5 | 8 |
+| EU_ISO | 85 | 3 | 8 |
+
+## 峰度计算（S1-S4 原始矩统计）
+
+根据规范 4.X.3，使用原始矩统计量 S1-S4 跨时段精确合成峰度 β：
+
+```
+μ = S1 / n
+m2 = S2/n - μ²
+m4 = S4/n - 4μ·S3/n + 6μ²·S2/n - 3μ⁴
+β = m4 / m2²
 ```
 
-## 使用示例
+## 文件结构
 
-### 示例1: 剂量计算
-
-```cpp
-#include "noise_toolkit.hpp"
-
-using namespace noise_toolkit;
-
-int main() {
-    // 创建剂量计算器（使用NIOSH标准）
-    DoseCalculator calculator(DoseStandard::NIOSH);
-    
-    // 计算剂量
-    double laeq = 85.0;  // dBA
-    double duration = 3600.0;  // 秒
-    
-    auto result = calculator.calculate_dose(laeq, duration);
-    
-    std::cout << "Dose%: " << result.dose_percent << std::endl;
-    std::cout << "TWA: " << result.twa << " dBA" << std::endl;
-    std::cout << "LEX,8h: " << result.lex_8h << " dBA" << std::endl;
-    
-    return 0;
-}
 ```
-
-### 示例2: 音频处理
-
-```cpp
-#include "noise_toolkit.hpp"
-
-using namespace noise_toolkit;
-
-int main() {
-    // 处理WAV文件
-    AudioProcessor processor;
-    
-    auto metrics = processor.process_wav_file("input.wav");
-    
-    std::cout << "LAeq: " << metrics.laeq << " dBA" << std::endl;
-    std::cout << "LCeq: " << metrics.lceq << " dBC" << std::endl;
-    std::cout << "Peak: " << metrics.peak << " dB" << std::endl;
-    
-    return 0;
-}
+noise_info_toolkit_gcc/
+├── include/
+│   ├── noise_metrics.hpp       # 核心数据结构（SecondMetrics, MinuteMetrics）
+│   ├── noise_processor.hpp     # 主处理器（两个接口）
+│   ├── dose_calculator.hpp     # 剂量计算器
+│   ├── signal_utils.hpp         # 信号处理工具
+│   ├── iir_filter.hpp          # IIR滤波器设计
+│   └── noise_toolkit.hpp       # 主入口
+├── src/
+│   ├── noise_processor.cpp     # 处理器实现
+│   ├── dose_calculator.cpp      # 剂量计算实现
+│   ├── signal_utils.cpp         # 信号处理实现
+│   └── iir_filter.cpp          # IIR滤波器实现
+├── tests/
+│   └── test_noise_processor.cpp # 单元测试（10个测试）
+├── examples/
+│   └── main.cpp                # 示例程序
+├── dose_validator.cpp          # 剂量计算验证
+└── CMakeLists.txt
 ```
-
-### 示例3: 事件检测
-
-```cpp
-#include "noise_toolkit.hpp"
-
-using namespace noise_toolkit;
-
-int main() {
-    // 创建事件检测器
-    EventDetector detector(EventTriggerMode::LEQ, 90.0);
-    
-    // 设置回调函数
-    detector.on_event([](const Event& event) {
-        std::cout << "事件触发时间: " << event.timestamp << std::endl;
-        std::cout << "峰值: " << event.peak_level << " dB" << std::endl;
-    });
-    
-    // 处理音频数据
-    detector.process(samples, sample_rate);
-    
-    return 0;
-}
-```
-
-### 示例4: 数据库操作
-
-```cpp
-#include "noise_toolkit.hpp"
-
-using namespace noise_toolkit;
-
-int main() {
-    // 创建数据库连接
-    Database db("measurement.db");
-    db.initialize_tables();
-    
-    // 插入时间历史数据
-    TimeHistoryRecord record;
-    record.timestamp = std::time(nullptr);
-    record.laeq = 82.5;
-    record.dose_increment = 0.01;
-    
-    db.insert_time_history(record);
-    
-    // 查询数据
-    auto records = db.get_time_history(start_time, end_time);
-    
-    return 0;
-}
-```
-
-## 构建选项
-
-| 选项 | 默认值 | 说明 |
-|------|--------|------|
-| `BUILD_TESTS` | ON | 是否构建测试 |
-| `BUILD_SHARED_LIBS` | ON | 构建动态库(.so)或静态库(.a) |
 
 ## 依赖项
 
 - C++17 编译器
 - CMake 3.14+
-- SQLite3 开发库 (`libsqlite3-dev` 或 `sqlite-devel`)
 - pthread
 
-## 标准参数
+## 与 Python 版本对比
 
-| 标准 | 准则级 (dBA) | 交换率 (dB) | 参考时长 (h) | 说明 |
-|------|-------------|-------------|-------------|------|
-| NIOSH | 85 | 3 | 8 | 美国NIOSH标准 |
-| OSHA_PEL | 90 | 5 | 8 | OSHA允许暴露限值 |
-| OSHA_HCA | 85 | 5 | 8 | OSHA听力保护修正案 |
-| EU_ISO | 85 | 3 | 8 | 欧盟/ISO标准 |
-
-## 剂量计算公式
-
-- **允许暴露时间**: `T = Tref / 2^((L - Lc) / ER)`
-- **剂量计算**: `Dose% = 100 × (dt/Tref) × 2^((L-Lc)/ER)`
-- **TWA**: 
-  - NIOSH/ISO: `TWA = 10 × log10(Dose%/100) + Lc`
-  - OSHA: `TWA = 16.61 × log10(Dose%/100) + Lc`
-- **LEX,8h**: `LEX = 10 × log10(Dose%/100) + Lc`
-
-## Python版本对比验证
-
-使用 `validation/validate_dose_calculator.py` 对比Python和C++版本的计算结果：
-
-```bash
-python3 validation/validate_dose_calculator.py
-```
+使用 `validation/validate_dose_calculator.py` 对比 Python 和 C++ 版本：
 
 | 标准 | 指标 | Python | C++ | 差异 |
 |------|------|--------|-----|------|
@@ -195,35 +138,6 @@ python3 validation/validate_dose_calculator.py
 
 ✅ 所有计算结果一致
 
-## 文件结构
-
-```
-noise_info_toolkit_gcc/
-├── include/              # 头文件目录
-│   ├── noise_toolkit.hpp # 主入口头文件
-│   ├── dose_calculator.hpp
-│   ├── audio_processor.hpp
-│   ├── signal_utils.hpp
-│   ├── time_history_processor.hpp
-│   ├── event_detector.hpp
-│   ├── event_processor.hpp
-│   ├── ring_buffer.hpp
-│   ├── database.hpp
-│   ├── wav_reader.hpp
-│   ├── tdms_converter.hpp
-│   └── iir_filter.hpp
-├── src/                  # C++源文件
-├── examples/             # 示例代码
-│   └── main.cpp          # 完整功能示例
-├── validation/           # 验证脚本（Python）
-│   ├── validate_dose_calculator.py
-│   └── process_tdms_python.py
-├── doc/                  # 文档
-├── build_test/           # 构建目录
-├── dose_validator.cpp    # 独立验证程序
-└── process_tdms_cpp.cpp  # TDMS处理验证程序
-```
-
 ## 项目链接
 
 - **C++ 版本（本项目）**: https://github.com/LewisBase/noise_info_toolkit_gcc
@@ -231,4 +145,4 @@ noise_info_toolkit_gcc/
 
 ## 许可证
 
-待定 / 请参考原Python项目许可证
+待定 / 请参考原 Python 项目许可证

@@ -17,12 +17,11 @@
 #include <cmath>
 #include <cstdint>
 
+#include "noise_metrics.hpp"
+
 namespace noise_toolkit {
 
-// Constants
-constexpr double REFERENCE_PRESSURE = 20e-6;  // 20 μPa
-constexpr double OVERLOAD_THRESHOLD = 140.0;   // dB
-constexpr double UNDERRANGE_THRESHOLD = 30.0;  // dB
+// Constants are defined in noise_metrics.hpp
 
 // Forward declarations
 class AudioProcessor;
