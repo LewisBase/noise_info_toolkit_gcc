@@ -1,10 +1,10 @@
 /**
  * @file noise_metrics.hpp
  * @brief Core metrics data structures for noise information toolkit
- * 
+ *
  * Defines all 81 per-second metrics and per-minute aggregated metrics.
  * Based on Python noise_info_toolkit TimeHistory model.
- * 
+ *
  * This header is standalone and does NOT include noise_toolkit.hpp
  * (which contains removed features).
  */
@@ -21,17 +21,17 @@ namespace noise_toolkit {
 // Constants
 //==============================================================================
 
-constexpr double REFERENCE_PRESSURE = 20e-6;     // 20 μPa
-constexpr double OVERLOAD_THRESHOLD = 140.0;      // dB
-constexpr double UNDERRANGE_THRESHOLD = 30.0;    // dB
-constexpr int THIRD_OCTAVE_BAND_COUNT = 9;        // 63Hz to 16kHz
+constexpr float REFERENCE_PRESSURE = 20e-6f;      // 20 μPa
+constexpr float OVERLOAD_THRESHOLD = 140.0f;       // dB
+constexpr float UNDERRANGE_THRESHOLD = 30.0f;     // dB
+constexpr int THIRD_OCTAVE_BAND_COUNT = 9;         // 63Hz to 16kHz
 
 //==============================================================================
 // Frequency Band Definitions
 //==============================================================================
 
-constexpr std::array<double, THIRD_OCTAVE_BAND_COUNT> THIRD_OCTAVE_BANDS = {
-    63.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0
+constexpr std::array<float, THIRD_OCTAVE_BAND_COUNT> THIRD_OCTAVE_BANDS = {
+    63.0f, 125.0f, 250.0f, 500.0f, 1000.0f, 2000.0f, 4000.0f, 8000.0f, 16000.0f
 };
 
 constexpr std::array<const char*, THIRD_OCTAVE_BAND_COUNT> THIRD_OCTAVE_BAND_NAMES = {
@@ -48,13 +48,13 @@ constexpr std::array<const char*, THIRD_OCTAVE_BAND_COUNT> THIRD_OCTAVE_BAND_NAM
  */
 struct FreqBandMoments {
     int32_t n{0};        // Sample count
-    double s1{0.0};      // Σx_k
-    double s2{0.0};      // Σx_k²
-    double s3{0.0};      // Σx_k³
-    double s4{0.0};      // Σx_k⁴
-    
+    float s1{0.0f};      // Σx_k
+    float s2{0.0f};      // Σx_k²
+    float s3{0.0f};      // Σx_k³
+    float s4{0.0f};      // Σx_k⁴
+
     FreqBandMoments() = default;
-    FreqBandMoments(int32_t n_, double s1_, double s2_, double s3_, double s4_)
+    FreqBandMoments(int32_t n_, float s1_, float s2_, float s3_, float s4_)
         : n(n_), s1(s1_), s2(s2_), s3(s3_), s4(s4_) {}
 };
 
@@ -64,7 +64,7 @@ struct FreqBandMoments {
 
 /**
  * @brief Single second metrics - all 81 indicators
- * 
+ *
  * Field count breakdown:
  *   - 2: timestamp, duration_s
  *   - 6: LAeq, LCeq, LZeq, LAFmax, LZpeak, LCpeak
@@ -78,83 +78,83 @@ struct FreqBandMoments {
  */
 struct alignas(64) SecondMetrics {
     //=== Metadata (2) ===
-    double timestamp{0.0};      // Unix timestamp (seconds since epoch)
-    double duration_s{1.0};    // Actual duration (typically 1.0s)
-    
+    float timestamp{0.0f};      // Unix timestamp (seconds since epoch)
+    float duration_s{1.0f};     // Actual duration (typically 1.0s)
+
     //=== Sound Levels (6) ===
-    double LAeq{0.0};          // A-weighted equivalent SPL
-    double LCeq{0.0};          // C-weighted equivalent SPL
-    double LZeq{0.0};          // Z-weighted (unweighted) equivalent SPL
-    double LAFmax{0.0};        // A-weighted fast time-weighted max
-    double LZpeak{0.0};        // Z-weighted peak level
-    double LCpeak{0.0};        // C-weighted peak level
-    
+    float LAeq{0.0f};           // A-weighted equivalent SPL
+    float LCeq{0.0f};           // C-weighted equivalent SPL
+    float LZeq{0.0f};           // Z-weighted (unweighted) equivalent SPL
+    float LAFmax{0.0f};         // A-weighted fast time-weighted max
+    float LZPeak{0.0f};         // Z-weighted peak level
+    float LCPeak{0.0f};         // C-weighted peak level
+
     //=== Dose Increments (4) ===
-    double dose_frac_niosh{0.0};     // NIOSH dose fraction (0-1)
-    double dose_frac_osha_pel{0.0};  // OSHA PEL dose fraction
-    double dose_frac_osha_hca{0.0};  // OSHA HCA dose fraction
-    double dose_frac_eu_iso{0.0};    // EU/ISO dose fraction
-    
+    float dose_frac_niosh{0.0f};     // NIOSH dose fraction (0-1)
+    float dose_frac_osha_pel{0.0f};  // OSHA PEL dose fraction
+    float dose_frac_osha_hca{0.0f};  // OSHA HCA dose fraction
+    float dose_frac_eu_iso{0.0f};    // EU/ISO dose fraction
+
     //=== Quality Control (3) ===
     bool overload_flag{false};    // Peak exceeds 140 dB
     bool underrange_flag{false};  // LAeq below 30 dB
-    bool wearing_state{true};      // Meter wearing detection
-    
+    bool wearing_state{true};     // Meter wearing detection
+
     //=== Kurtosis Metrics (4) ===
-    double kurtosis_total{3.0};      // Z-weighted (raw signal) kurtosis (Pearson, normal=3)
-    double kurtosis_a_weighted{3.0};  // A-weighted kurtosis
-    double kurtosis_c_weighted{3.0};  // C-weighted kurtosis
-    double beta_kurtosis{0.0};        // Kurtosis from raw moments (per spec 4.X.3)
-    
+    float kurtosis_total{3.0f};      // Z-weighted (raw signal) kurtosis (Pearson, normal=3)
+    float kurtosis_a_weighted{3.0f};  // A-weighted kurtosis
+    float kurtosis_c_weighted{3.0f};  // C-weighted kurtosis
+    float beta_kurtosis{0.0f};        // Kurtosis from raw moments (per spec 4.X.3)
+
     //=== Raw Moment Statistics for Aggregation (5, per spec 4.X.3) ===
     int32_t n_samples{0};  // Sample count n
-    double sum_x{0.0};     // S1 = Σx_k
-    double sum_x2{0.0};    // S2 = Σx_k²
-    double sum_x3{0.0};    // S3 = Σx_k³
-    double sum_x4{0.0};    // S4 = Σx_k⁴
-    
+    float sum_x{0.0f};     // S1 = Σx_k
+    float sum_x2{0.0f};    // S2 = Σx_k²
+    float sum_x3{0.0f};    // S3 = Σx_k³
+    float sum_x4{0.0f};    // S4 = Σx_k⁴
+
     //=== 1/3 Octave Band SPL (9) ===
-    double freq_63hz_spl{0.0};
-    double freq_125hz_spl{0.0};
-    double freq_250hz_spl{0.0};
-    double freq_500hz_spl{0.0};
-    double freq_1khz_spl{0.0};
-    double freq_2khz_spl{0.0};
-    double freq_4khz_spl{0.0};
-    double freq_8khz_spl{0.0};
-    double freq_16khz_spl{0.0};
-    
+    float freq_63hz_spl{0.0f};
+    float freq_125hz_spl{0.0f};
+    float freq_250hz_spl{0.0f};
+    float freq_500hz_spl{0.0f};
+    float freq_1khz_spl{0.0f};
+    float freq_2khz_spl{0.0f};
+    float freq_4khz_spl{0.0f};
+    float freq_8khz_spl{0.0f};
+    float freq_16khz_spl{0.0f};
+
     //=== 1/3 Octave Band Raw Moment Statistics S1-S4 (9 bands × 5 values = 45) ===
     // 63Hz band
     int32_t freq_63hz_n{0};
-    double freq_63hz_s1{0.0}, freq_63hz_s2{0.0}, freq_63hz_s3{0.0}, freq_63hz_s4{0.0};
+    float freq_63hz_s1{0.0f}, freq_63hz_s2{0.0f}, freq_63hz_s3{0.0f}, freq_63hz_s4{0.0f};
     // 125Hz band
     int32_t freq_125hz_n{0};
-    double freq_125hz_s1{0.0}, freq_125hz_s2{0.0}, freq_125hz_s3{0.0}, freq_125hz_s4{0.0};
+    float freq_125hz_s1{0.0f}, freq_125hz_s2{0.0f}, freq_125hz_s3{0.0f}, freq_125hz_s4{0.0f};
     // 250Hz band
     int32_t freq_250hz_n{0};
-    double freq_250hz_s1{0.0}, freq_250hz_s2{0.0}, freq_250hz_s3{0.0}, freq_250hz_s4{0.0};
+    float freq_250hz_s1{0.0f}, freq_250hz_s2{0.0f}, freq_250hz_s3{0.0f}, freq_250hz_s4{0.0f};
     // 500Hz band
     int32_t freq_500hz_n{0};
-    double freq_500hz_s1{0.0}, freq_500hz_s2{0.0}, freq_500hz_s3{0.0}, freq_500hz_s4{0.0};
+    float freq_500hz_s1{0.0f}, freq_500hz_s2{0.0f}, freq_500hz_s3{0.0f}, freq_500hz_s4{0.0f};
     // 1kHz band
     int32_t freq_1khz_n{0};
-    double freq_1khz_s1{0.0}, freq_1khz_s2{0.0}, freq_1khz_s3{0.0}, freq_1khz_s4{0.0};
+    float freq_1khz_s1{0.0f}, freq_1khz_s2{0.0f}, freq_1khz_s3{0.0f}, freq_1khz_s4{0.0f};
     // 2kHz band
     int32_t freq_2khz_n{0};
-    double freq_2khz_s1{0.0}, freq_2khz_s2{0.0}, freq_2khz_s3{0.0}, freq_2khz_s4{0.0};
+    float freq_2khz_s1{0.0f}, freq_2khz_s2{0.0f}, freq_2khz_s3{0.0f}, freq_2khz_s4{0.0f};
     // 4kHz band
     int32_t freq_4khz_n{0};
-    double freq_4khz_s1{0.0}, freq_4khz_s2{0.0}, freq_4khz_s3{0.0}, freq_4khz_s4{0.0};
+    float freq_4khz_s1{0.0f}, freq_4khz_s2{0.0f}, freq_4khz_s3{0.0f}, freq_4khz_s4{0.0f};
     // 8kHz band
     int32_t freq_8khz_n{0};
-    double freq_8khz_s1{0.0}, freq_8khz_s2{0.0}, freq_8khz_s3{0.0}, freq_8khz_s4{0.0};
+    float freq_8khz_s1{0.0f}, freq_8khz_s2{0.0f}, freq_8khz_s3{0.0f}, freq_8khz_s4{0.0f};
     // 16kHz band
     int32_t freq_16khz_n{0};
-    double freq_16khz_s1{0.0}, freq_16khz_s2{0.0}, freq_16khz_s3{0.0}, freq_16khz_s4{0.0};
-    
+    float freq_16khz_s1{0.0f}, freq_16khz_s2{0.0f}, freq_16khz_s3{0.0f}, freq_16khz_s4{0.0f};
+
     SecondMetrics() = default;
-    
+
     /** @brief Reset all fields to default values */
     void reset() { *this = SecondMetrics{}; }
 };
@@ -168,72 +168,72 @@ struct alignas(64) SecondMetrics {
  * Derived from 60 SecondMetrics records
  */
 struct MinuteMetrics {
-    double timestamp{0.0};
-    double duration_s{60.0};
-    
+    float timestamp{0.0f};
+    float duration_s{60.0f};
+
     //=== Overall Sound Levels (3) ===
-    double LAeq{0.0};
-    double LCeq{0.0};
-    double LZeq{0.0};
-    
+    float LAeq{0.0f};
+    float LCeq{0.0f};
+    float LZeq{0.0f};
+
     //=== Peak Levels (2) ===
-    double LAFmax{0.0};
-    double LZpeak{0.0};
-    
+    float LAFmax{0.0f};
+    float LZPeak{0.0f};
+
     //=== Dose Accumulation (4) ===
-    double dose_frac_niosh{0.0};
-    double dose_frac_osha_pel{0.0};
-    double dose_frac_osha_hca{0.0};
-    double dose_frac_eu_iso{0.0};
-    
+    float dose_frac_niosh{0.0f};
+    float dose_frac_osha_pel{0.0f};
+    float dose_frac_osha_hca{0.0f};
+    float dose_frac_eu_iso{0.0f};
+
     //=== QC Statistics (3) ===
     int32_t overload_count{0};
     int32_t underrange_count{0};
     int32_t valid_seconds{0};
-    
+
     //=== Kurtosis (3) ===
-    double kurtosis_total{3.0};
-    double kurtosis_a_weighted{3.0};
-    double kurtosis_c_weighted{3.0};
-    
+    float kurtosis_total{3.0f};
+    float kurtosis_a_weighted{3.0f};
+    float kurtosis_c_weighted{3.0f};
+
     //=== Raw Moments for Kurtosis (5) ===
     int32_t n_samples{0};
-    double sum_x{0.0};
-    double sum_x2{0.0};
-    double sum_x3{0.0};
-    double sum_x4{0.0};
-    
+    float sum_x{0.0f};
+    float sum_x2{0.0f};
+    float sum_x3{0.0f};
+    float sum_x4{0.0f};
+
     //=== 1/3 Octave Band SPL (9) ===
-    double freq_63hz_spl{0.0};
-    double freq_125hz_spl{0.0};
-    double freq_250hz_spl{0.0};
-    double freq_500hz_spl{0.0};
-    double freq_1khz_spl{0.0};
-    double freq_2khz_spl{0.0};
-    double freq_4khz_spl{0.0};
-    double freq_8khz_spl{0.0};
-    double freq_16khz_spl{0.0};
-    
+    float freq_63hz_spl{0.0f};
+    float freq_125hz_spl{0.0f};
+    float freq_250hz_spl{0.0f};
+    float freq_500hz_spl{0.0f};
+    float freq_1khz_spl{0.0f};
+    float freq_2khz_spl{0.0f};
+    float freq_4khz_spl{0.0f};
+    float freq_8khz_spl{0.0f};
+    float freq_16khz_spl{0.0f};
+
     //=== 1/3 Octave Band Raw Moments S1-S4 (45) ===
     int32_t freq_63hz_n{0};
-    double freq_63hz_s1{0.0}, freq_63hz_s2{0.0}, freq_63hz_s3{0.0}, freq_63hz_s4{0.0};
+    float freq_63hz_s1{0.0f}, freq_63hz_s2{0.0f}, freq_63hz_s3{0.0f}, freq_63hz_s4{0.0f};
     int32_t freq_125hz_n{0};
-    double freq_125hz_s1{0.0}, freq_125hz_s2{0.0}, freq_125hz_s3{0.0}, freq_125hz_s4{0.0};
+    float freq_125hz_s1{0.0f}, freq_125hz_s2{0.0f}, freq_125hz_s3{0.0f}, freq_125hz_s4{0.0f};
     int32_t freq_250hz_n{0};
-    double freq_250hz_s1{0.0}, freq_250hz_s2{0.0}, freq_250hz_s3{0.0}, freq_250hz_s4{0.0};
+    float freq_250hz_s1{0.0f}, freq_250hz_s2{0.0f}, freq_250hz_s3{0.0f}, freq_250hz_s4{0.0f};
     int32_t freq_500hz_n{0};
-    double freq_500hz_s1{0.0}, freq_500hz_s2{0.0}, freq_500hz_s3{0.0}, freq_500hz_s4{0.0};
+    float freq_500hz_s1{0.0f}, freq_500hz_s2{0.0f}, freq_500hz_s3{0.0f}, freq_500hz_s4{0.0f};
     int32_t freq_1khz_n{0};
-    double freq_1khz_s1{0.0}, freq_1khz_s2{0.0}, freq_1khz_s3{0.0}, freq_1khz_s4{0.0};
+    float freq_1khz_s1{0.0f}, freq_1khz_s2{0.0f}, freq_1khz_s3{0.0f}, freq_1khz_s4{0.0f};
     int32_t freq_2khz_n{0};
-    double freq_2khz_s1{0.0}, freq_2khz_s2{0.0}, freq_2khz_s3{0.0}, freq_2khz_s4{0.0};
+    float freq_2khz_s1{0.0f}, freq_2khz_s2{0.0f}, freq_2khz_s3{0.0f}, freq_2khz_s4{0.0f};
     int32_t freq_4khz_n{0};
-    double freq_4khz_s1{0.0}, freq_4khz_s2{0.0}, freq_4khz_s3{0.0}, freq_4khz_s4{0.0};
+    float freq_4khz_s1{0.0f}, freq_4khz_s2{0.0f}, freq_4khz_s3{0.0f}, freq_4khz_s4{0.0f};
     int32_t freq_8khz_n{0};
-    double freq_8khz_s1{0.0}, freq_8khz_s2{0.0}, freq_8khz_s3{0.0}, freq_8khz_s4{0.0};
+    float freq_8khz_s1{0.0f}, freq_8khz_s2{0.0f}, freq_8khz_s3{0.0f}, freq_8khz_s4{0.0f};
     int32_t freq_16khz_n{0};
-    double freq_16khz_s1{0.0}, freq_16khz_s2{0.0}, freq_16khz_s3{0.0}, freq_16khz_s4{0.0};
-    
+    float freq_16khz_s1{0.0f}, freq_16khz_s2{0.0f}, freq_16khz_s3{0.0f}, freq_16khz_s4{0.0f};
+
     MinuteMetrics() = default;
     void reset() { *this = MinuteMetrics{}; }
 };
@@ -242,25 +242,16 @@ struct MinuteMetrics {
 // Utility Functions
 //==============================================================================
 
-/**
- * @brief Calculate kurtosis β from raw moment statistics (per spec 4.X.3)
- * 
- * Formula:
- *   μ = S1 / n
- *   m2 = S2/n - μ²
- *   m4 = S4/n - 4μ·S3/n + 6μ²·S2/n - 3μ⁴
- *   β = m4 / m2²
- */
-inline double calculate_kurtosis_from_moments(int32_t n, double s1, double s2, 
-                                                double s3, double s4) {
+inline float calculate_kurtosis_from_moments(int32_t n, float s1, float s2,
+                                              float s3, float s4) {
     if (n <= 0) return std::nan("");
-    double mu = s1 / n;
-    double m2 = s2 / n - mu * mu;
+    float mu = s1 / n;
+    float m2 = s2 / n - mu * mu;
     if (m2 <= 0) return std::nan("");
-    double m4 = (s4 / n 
-                - 4.0 * mu * (s3 / n) 
-                + 6.0 * (mu * mu) * (s2 / n) 
-                - 3.0 * (mu * mu * mu * mu));
+    float m4 = (s4 / n
+                - 4.0f * mu * (s3 / n)
+                + 6.0f * (mu * mu) * (s2 / n)
+                - 3.0f * (mu * mu * mu * mu));
     return m4 / (m2 * m2);
 }
 
@@ -311,10 +302,10 @@ inline const FreqBandMoments* band_moments_ptr(const MinuteMetrics& m, int band_
  * @brief Aggregate raw moments from multiple records
  */
 inline int32_t aggregate_moments(const FreqBandMoments* moments, int count,
-                                  double& out_s1, double& out_s2, 
-                                  double& out_s3, double& out_s4) {
+                                  float& out_s1, float& out_s2,
+                                  float& out_s3, float& out_s4) {
     int32_t total_n = 0;
-    out_s1 = out_s2 = out_s3 = out_s4 = 0.0;
+    out_s1 = out_s2 = out_s3 = out_s4 = 0.0f;
     for (int i = 0; i < count; ++i) {
         if (moments[i].n > 0) {
             out_s1 += moments[i].s1;

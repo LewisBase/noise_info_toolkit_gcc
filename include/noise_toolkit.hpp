@@ -34,17 +34,17 @@ class RingBuffer;
 class Database;
 
 // Utility functions
-double db_to_pressure(double db, double p0 = REFERENCE_PRESSURE);
-double pressure_to_db(double pressure, double p0 = REFERENCE_PRESSURE);
-double calculate_rms(const std::vector<double>& samples);
-double calculate_peak(const std::vector<double>& samples);
+float db_to_pressure(float db, float p0 = REFERENCE_PRESSURE);
+float pressure_to_db(float pressure, float p0 = REFERENCE_PRESSURE);
+float calculate_rms(const std::vector<float>& samples);
+float calculate_peak(const std::vector<float>& samples);
 
 // A-weighting filter coefficients
-extern const std::vector<double> A_WEIGHTING_FREQUENCIES;
-extern const std::vector<double> A_WEIGHTING_GAINS;
+extern const std::vector<float> A_WEIGHTING_FREQUENCIES;
+extern const std::vector<float> A_WEIGHTING_GAINS;
 
 // C-weighting filter coefficients
-extern const std::vector<double> C_WEIGHTING_FREQUENCIES;
-extern const std::vector<double> C_WEIGHTING_GAINS;
+extern const std::vector<float> C_WEIGHTING_FREQUENCIES;
+extern const std::vector<float> C_WEIGHTING_GAINS;
 
 } // namespace noise_toolkit

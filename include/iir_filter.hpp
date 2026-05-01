@@ -1,7 +1,7 @@
 /**
  * @file iir_filter.hpp
  * @brief IIR Filter Design and Implementation
- * 
+ *
  * Implements standard IIR filters (Butterworth, Biquad, etc.)
  * Following scipy.signal and standard DSP algorithms
  */
@@ -18,16 +18,16 @@ namespace noise_toolkit {
  * @brief IIR Filter coefficients
  */
 struct IIRCoefficients {
-    std::vector<double> b;  // Numerator coefficients
-    std::vector<double> a;  // Denominator coefficients
+    std::vector<float> b;  // Numerator coefficients
+    std::vector<float> a;  // Denominator coefficients
 };
 
 /**
  * @brief Second-order section (biquad) coefficients
  */
 struct BiquadCoefficients {
-    double b0, b1, b2;  // Numerator
-    double a0, a1, a2;  // Denominator (a0 usually = 1)
+    float b0, b1, b2;  // Numerator
+    float a0, a1, a2;  // Denominator (a0 usually = 1)
 };
 
 /**
@@ -38,33 +38,33 @@ public:
     /**
      * @brief Create filter from coefficients
      */
-    IIRFilter(const std::vector<double>& b, const std::vector<double>& a);
-    
+    IIRFilter(const std::vector<float>& b, const std::vector<float>& a);
+
     /**
      * @brief Process single sample
      */
-    double process(double input);
-    
+    float process(float input);
+
     /**
      * @brief Process entire signal
      */
-    std::vector<double> process(const std::vector<double>& signal);
-    
+    std::vector<float> process(const std::vector<float>& signal);
+
     /**
      * @brief Reset filter state
      */
     void reset();
-    
+
     /**
      * @brief Get filter coefficients
      */
     IIRCoefficients get_coefficients() const { return {b_, a_}; }
 
 private:
-    std::vector<double> b_;
-    std::vector<double> a_;
-    std::vector<double> state_b_;  // Delay line for input
-    std::vector<double> state_a_;  // Delay line for output
+    std::vector<float> b_;
+    std::vector<float> a_;
+    std::vector<float> state_b_;  // Delay line for input
+    std::vector<float> state_a_;  // Delay line for output
 };
 
 /**
@@ -72,18 +72,18 @@ private:
  */
 class BiquadFilter {
 public:
-    BiquadFilter(double b0, double b1, double b2, double a0, double a1, double a2);
+    BiquadFilter(float b0, float b1, float b2, float a0, float a1, float a2);
     explicit BiquadFilter(const BiquadCoefficients& coef);
-    
-    double process(double input);
-    std::vector<double> process(const std::vector<double>& signal);
+
+    float process(float input);
+    std::vector<float> process(const std::vector<float>& signal);
     void reset();
 
 private:
-    double b0_, b1_, b2_;
-    double a0_, a1_, a2_;
-    double x1_, x2_;  // Input delay
-    double y1_, y2_;  // Output delay
+    float b0_, b1_, b2_;
+    float a0_, a1_, a2_;
+    float x1_, x2_;  // Input delay
+    float y1_, y2_;  // Output delay
 };
 
 /**
@@ -99,7 +99,7 @@ namespace filter_design {
  * @param btype Filter type: "low", "high", "band", "bandstop"
  * @return Filter coefficients
  */
-IIRCoefficients butterworth(int order, 
+IIRCoefficients butterworth(int order,
                             double critical_freq,
                             double sample_rate,
                             const std::string& btype = "low");
@@ -107,7 +107,7 @@ IIRCoefficients butterworth(int order,
 /**
  * @brief Design bandpass filter using Butterworth
  */
-IIRCoefficients bandpass(double low_freq, 
+IIRCoefficients bandpass(double low_freq,
                          double high_freq,
                          double sample_rate,
                          int order = 4);
@@ -117,21 +117,21 @@ IIRCoefficients bandpass(double low_freq,
  * @param sample_rate Sample rate in Hz
  * @return Biquad sections for A-weighting
  */
-std::vector<BiquadCoefficients> a_weighting_design(double sample_rate);
+std::vector<BiquadCoefficients> a_weighting_design(float sample_rate);
 
 /**
  * @brief Design C-weighting filter (IEC 61672-1:2013)
  * @param sample_rate Sample rate in Hz
  * @return Biquad sections for C-weighting
  */
-std::vector<BiquadCoefficients> c_weighting_design(double sample_rate);
+std::vector<BiquadCoefficients> c_weighting_design(float sample_rate);
 
 /**
  * @brief Design Z-weighting filter (flat, unity gain)
  * @param sample_rate Sample rate in Hz
  * @return Unity filter coefficients
  */
-IIRCoefficients z_weighting_design(double sample_rate);
+IIRCoefficients z_weighting_design(float sample_rate);
 
 /**
  * @brief Bilinear transform from analog to digital
@@ -149,8 +149,8 @@ IIRCoefficients bilinear_transform(const std::vector<std::complex<double>>& anal
 /**
  * @brief Convert filter to second-order sections (SOS)
  */
-std::vector<BiquadCoefficients> tf2sos(const std::vector<double>& b,
-                                       const std::vector<double>& a);
+std::vector<BiquadCoefficients> tf2sos(const std::vector<float>& b,
+                                       const std::vector<float>& a);
 
 } // namespace filter_design
 
@@ -166,15 +166,15 @@ namespace octave_filters {
  * @param order Filter order
  * @return Filter coefficients
  */
-IIRCoefficients design_third_octave(double center_freq, 
-                                    double sample_rate,
+IIRCoefficients design_third_octave(double center_freq,
+                                    float sample_rate,
                                     int order = 4);
 
 /**
  * @brief Design octave band filter
  */
 IIRCoefficients design_octave(double center_freq,
-                              double sample_rate,
+                              float sample_rate,
                               int order = 4);
 
 /**
