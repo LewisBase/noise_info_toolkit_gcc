@@ -43,7 +43,7 @@ void test_second_metrics_basic() {
 
     auto data = generate_sine(1000.0f, amplitude, 48000, 1.0f);
 
-    SecondMetrics m = processor.process_one_second(data.data(), data.data() + data.size(), 1.0f);
+    SecondMetrics m = processor.process_segment(data.data(), data.data() + data.size(), 1.0f);
 
     assert(m.LAeq > 85.0f && m.LAeq < 105.0f);
     assert(m.n_samples == 48000);
@@ -79,7 +79,10 @@ void test_kurtosis_from_moments() {
 
     assert(std::isnan(calculate_kurtosis_from_moments(0, 0.0f, 0.0f, 0.0f, 0.0f)));
 
-    assert(std::isnan(calculate_kurtosis_from_moments(100, 10.0f, 100.0f, 1000.0f, 10000.0f)));
+    // Valid moments with positive variance should return finite kurtosis
+    float beta2 = calculate_kurtosis_from_moments(100, 10.0f, 100.0f, 1000.0f, 10000.0f);
+    assert(!std::isnan(beta2));
+    assert(beta2 > 0.0f);
 
     std::cout << "PASSED (beta=" << beta << ")\n";
 }
@@ -90,7 +93,7 @@ void test_frequency_bands() {
     NoiseProcessor processor(48000);
 
     auto data = generate_sine(1000.0f, 1.0f, 48000, 1.0f);
-    SecondMetrics m = processor.process_one_second(data.data(), data.data() + data.size(), 1.0f);
+    SecondMetrics m = processor.process_segment(data.data(), data.data() + data.size(), 1.0f);
 
     assert(m.freq_1khz_spl > m.freq_63hz_spl);
     assert(m.freq_1khz_spl > m.freq_8khz_spl);
@@ -114,11 +117,11 @@ void test_minute_aggregation() {
         float amplitude = rms * std::sqrt(2.0f);
 
         auto data = generate_sine(1000.0f, amplitude, 48000, 1.0f);
-        seconds[i] = processor.process_one_second(data.data(), data.data() + data.size(), 1.0f);
+        seconds[i] = processor.process_segment(data.data(), data.data() + data.size(), 1.0f);
         seconds[i].timestamp = static_cast<float>(i);
     }
 
-    MinuteMetrics minute = processor.aggregate_minute_metrics(seconds.data(), 60, 1.0f);
+    MinuteMetrics minute = processor.aggregate_metrics(seconds.data(), 60, 1.0f);
 
     assert(minute.duration_s > 59.0f && minute.duration_s < 61.0f);
     assert(minute.valid_seconds == 60);
@@ -139,11 +142,11 @@ void test_qc_flags() {
     NoiseProcessor processor(48000);
 
     auto quiet = generate_sine(1000.0f, 1e-6f, 48000, 1.0f);
-    SecondMetrics m_quiet = processor.process_one_second(quiet.data(), quiet.data() + quiet.size(), 1.0f);
+    SecondMetrics m_quiet = processor.process_segment(quiet.data(), quiet.data() + quiet.size(), 1.0f);
     assert(m_quiet.underrange_flag == true);
 
     auto normal = generate_sine(1000.0f, 1.0f, 48000, 1.0f);
-    SecondMetrics m_normal = processor.process_one_second(normal.data(), normal.data() + normal.size(), 1.0f);
+    SecondMetrics m_normal = processor.process_segment(normal.data(), normal.data() + normal.size(), 1.0f);
     assert(m_normal.underrange_flag == false);
     assert(m_normal.wearing_state == true);
 
@@ -157,14 +160,14 @@ void test_dose_calculation() {
 
     float rms_85 = 20e-6f * std::pow(10.0f, 85.0f / 20.0f);
     auto data = generate_sine(1000.0f, rms_85 * std::sqrt(2.0f), 48000, 1.0f);
-    SecondMetrics m = processor.process_one_second(data.data(), data.data() + data.size(), 1.0f);
+    SecondMetrics m = processor.process_segment(data.data(), data.data() + data.size(), 1.0f);
 
     assert(m.dose_frac_niosh > 0.0f);
     assert(m.dose_frac_niosh < 0.01f);
 
     float rms_91 = 20e-6f * std::pow(10.0f, 91.0f / 20.0f);
     auto data_91 = generate_sine(1000.0f, rms_91 * std::sqrt(2.0f), 48000, 1.0f);
-    SecondMetrics m_91 = processor.process_one_second(data_91.data(), data_91.data() + data_91.size(), 1.0f);
+    SecondMetrics m_91 = processor.process_segment(data_91.data(), data_91.data() + data_91.size(), 1.0f);
 
     assert(m_91.dose_frac_niosh > m.dose_frac_niosh);
 
@@ -178,7 +181,7 @@ void test_buffer_interfaces() {
 
     std::vector<float> data = generate_sine(1000.0f, 1.0f, 48000, 1.0f);
 
-    SecondMetrics m_float = processor.process_one_second(data.data(), data.data() + data.size(), 1.0f);
+    SecondMetrics m_float = processor.process_segment(data.data(), data.data() + data.size(), 1.0f);
 
     assert(!std::isnan(m_float.LAeq));
     assert(!std::isnan(m_float.kurtosis_total));
@@ -192,7 +195,7 @@ void test_empty_buffer() {
     NoiseProcessor processor(48000);
 
     std::vector<float> empty;
-    SecondMetrics m = processor.process_one_second(empty.data(), empty.data(), 0.01f);
+    SecondMetrics m = processor.process_segment(empty.data(), empty.data(), 0.01f);
 
     assert(std::isnan(m.LAeq) || m.LAeq == 0.0f);
     assert(m.n_samples == 0);
@@ -208,7 +211,7 @@ void test_sample_rates() {
     for (int sr : sample_rates) {
         NoiseProcessor processor(sr);
         auto data = generate_sine(1000.0f, 1.0f, sr, 1.0f);
-        SecondMetrics m = processor.process_one_second(data.data(), data.data() + data.size(), 1.0f);
+        SecondMetrics m = processor.process_segment(data.data(), data.data() + data.size(), 1.0f);
 
         assert(m.n_samples == sr);
         assert(m.duration_s > 0.99f && m.duration_s < 1.01f);
@@ -281,7 +284,7 @@ void test_flexible_duration_processing() {
     int samples_per_10ms = 480;
     auto data = generate_sine(1000.0f, 1.0f, 48000, 0.01f);
 
-    SecondMetrics m = processor.process_one_second(data.data(), data.data() + data.size(), 0.01f);
+    SecondMetrics m = processor.process_segment(data.data(), data.data() + data.size(), 0.01f);
 
     assert(m.n_samples == samples_per_10ms);
     assert(m.duration_s > 0.009f && m.duration_s < 0.011f);
@@ -299,11 +302,11 @@ void test_aggregation_with_different_unit_durations() {
 
     for (int i = 0; i < 100; ++i) {
         auto data = generate_sine(1000.0f, 1.0f, 48000, 0.01f);
-        metrics_10ms[i] = processor.process_one_second(data.data(), data.data() + data.size(), 0.01f);
+        metrics_10ms[i] = processor.process_segment(data.data(), data.data() + data.size(), 0.01f);
         metrics_10ms[i].timestamp = static_cast<float>(i) * 0.01f;
     }
 
-    MinuteMetrics minute = processor.aggregate_minute_metrics(metrics_10ms.data(), 100, 0.01f);
+    MinuteMetrics minute = processor.aggregate_metrics(metrics_10ms.data(), 100, 0.01f);
 
     assert(minute.duration_s > 0.9f && minute.duration_s < 1.1f);
     assert(minute.valid_seconds == 100);

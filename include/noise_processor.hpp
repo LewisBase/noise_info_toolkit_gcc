@@ -2,12 +2,12 @@
  * @file noise_processor.hpp
  * @brief Lightweight noise metrics processor with two simple interfaces
  *
- * Interface 1 (per-segment): process_one_second(buffer_start, buffer_end, processing_duration_s)
+ * Interface 1 (per-segment): process_segment(buffer_start, buffer_end, duration_s)
  *   - Call with raw PCM buffer pointers and desired processing duration
- *   - Default processing_duration_s = 0.01f (10 ms)
+ *   - Default duration_s = 0.01f (10 ms)
  *   - Returns SecondMetrics (81 indicators)
  *
- * Interface 2 (aggregation): aggregate_minute_metrics(second_metrics, count, unit_duration_s)
+ * Interface 2 (aggregation): aggregate_metrics(metrics, count, unit_duration_s)
  *   - Call with array of SecondMetrics and unit duration
  *   - Default unit_duration_s = 1.0f (1 second per metric)
  *   - Returns MinuteMetrics (aggregated indicators)
@@ -47,24 +47,24 @@ public:
      *
      * @param buffer_start Pointer to start of PCM buffer (float samples)
      * @param buffer_end Pointer to end of PCM buffer
-     * @param processing_duration_s Duration of audio segment in seconds (default 0.01f = 10ms)
+     * @param duration_s Duration of audio segment in seconds (default 0.01f = 10ms)
      * @return SecondMetrics containing all 81 indicators
      *
-     * @note buffer must contain exactly sample_rate_ * processing_duration_s samples
+     * @note buffer must contain exactly sample_rate_ * duration_s samples
      *       If buffer length doesn't match, returns default/zero metrics
      */
-    SecondMetrics process_one_second(const float* buffer_start,
-                                     const float* buffer_end,
-                                     float processing_duration_s = 0.01f) noexcept;
+    SecondMetrics process_segment(const float* buffer_start,
+                                   const float* buffer_end,
+                                   float duration_s = 0.01f) noexcept;
 
     //==========================================================================
     // Interface 2: Aggregation
     //==========================================================================
 
     /**
-     * @brief Aggregate metrics into aggregated metrics
+     * @brief Aggregate multiple metrics into aggregated metrics
      *
-     * @param second_metrics Pointer to array of SecondMetrics
+     * @param metrics Pointer to array of SecondMetrics
      * @param count Number of metrics to aggregate
      * @param unit_duration_s Duration each SecondMetrics represents (default 1.0f)
      * @return MinuteMetrics containing aggregated indicators
@@ -72,18 +72,18 @@ public:
      * @note Total time covered = unit_duration_s * count
      *       Example: unit_duration_s=0.01f, count=6000 -> 60 seconds total
      */
-    MinuteMetrics aggregate_minute_metrics(const SecondMetrics* second_metrics,
-                                            int count,
-                                            float unit_duration_s = 1.0f) noexcept;
+    MinuteMetrics aggregate_metrics(const SecondMetrics* metrics,
+                                     int count,
+                                     float unit_duration_s = 1.0f) noexcept;
 
     /**
      * @brief Aggregate from std::array of SecondMetrics
      */
     template<size_t N>
-    MinuteMetrics aggregate_minute_metrics(
+    MinuteMetrics aggregate_metrics(
         const std::array<SecondMetrics, N>& metrics_array,
         float unit_duration_s = 1.0f) noexcept {
-        return aggregate_minute_metrics(metrics_array.data(), static_cast<int>(N), unit_duration_s);
+        return aggregate_metrics(metrics_array.data(), static_cast<int>(N), unit_duration_s);
     }
 
     //==========================================================================
@@ -99,7 +99,6 @@ public:
 private:
     int sample_rate_;
     float reference_pressure_;
-    DoseCalculator dose_calculator_;
 
     /** @brief Calculate 1/3 octave band moments for a signal */
     void calculate_band_moments(const float* data, size_t n,

@@ -6,19 +6,23 @@
 #include "iir_filter.hpp"
 #include <algorithm>
 #include <numeric>
+#ifndef NOISE_EMBEDDED_BUILD
 #include <stdexcept>
+#endif
 
 namespace noise_toolkit {
 
 // IIRFilter implementation
 IIRFilter::IIRFilter(const std::vector<float>& b, const std::vector<float>& a)
     : b_(b), a_(a) {
+#ifndef NOISE_EMBEDDED_BUILD
     if (a.empty() || b.empty()) {
         throw std::invalid_argument("Filter coefficients cannot be empty");
     }
     if (a[0] == 0.0f) {
         throw std::invalid_argument("a[0] cannot be zero");
     }
+#endif
 
     // Normalize by a[0]
     if (a_[0] != 1.0f) {

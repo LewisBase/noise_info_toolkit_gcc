@@ -7,6 +7,7 @@
 
 #include "signal_utils.hpp"
 #include "iir_filter.hpp"
+#include "filter_coefficients_48k.hpp"
 #include <algorithm>
 #include <numeric>
 #include <cmath>
@@ -43,22 +44,45 @@ public:
     WeightedSignalProcessor() {}
 
     void init_a_weighting(float sample_rate) {
-        sos_a_ = filter_design::a_weighting_design(sample_rate);
-        filters_a_.clear();
-        for (const auto& coef : sos_a_) {
-            filters_a_.emplace_back(coef);
+        if (sample_rate == 48000.0f) {
+            // Use pre-computed constexpr coefficients (no runtime design)
+            a_chain_ = A_WEIGHTING_48K;
+            a_chain_.reset();
+            use_chain_a_ = true;
+        } else {
+            // Fallback to runtime design for non-48kHz
+            sos_a_ = filter_design::a_weighting_design(sample_rate);
+            filters_a_.clear();
+            for (const auto& coef : sos_a_) {
+                filters_a_.emplace_back(coef);
+            }
+            use_chain_a_ = false;
         }
     }
 
     void init_c_weighting(float sample_rate) {
-        sos_c_ = filter_design::c_weighting_design(sample_rate);
-        filters_c_.clear();
-        for (const auto& coef : sos_c_) {
-            filters_c_.emplace_back(coef);
+        if (sample_rate == 48000.0f) {
+            c_chain_ = C_WEIGHTING_48K;
+            c_chain_.reset();
+            use_chain_c_ = true;
+        } else {
+            sos_c_ = filter_design::c_weighting_design(sample_rate);
+            filters_c_.clear();
+            for (const auto& coef : sos_c_) {
+                filters_c_.emplace_back(coef);
+            }
+            use_chain_c_ = false;
         }
     }
 
     std::vector<float> apply_a(const std::vector<float>& signal) {
+        if (use_chain_a_) {
+            std::vector<float> result(signal.size());
+            for (size_t i = 0; i < signal.size(); ++i) {
+                result[i] = a_chain_.process(signal[i]);
+            }
+            return result;
+        }
         std::vector<float> result = signal;
         for (auto& filter : filters_a_) {
             result = filter.process(result);
@@ -67,6 +91,13 @@ public:
     }
 
     std::vector<float> apply_c(const std::vector<float>& signal) {
+        if (use_chain_c_) {
+            std::vector<float> result(signal.size());
+            for (size_t i = 0; i < signal.size(); ++i) {
+                result[i] = c_chain_.process(signal[i]);
+            }
+            return result;
+        }
         std::vector<float> result = signal;
         for (auto& filter : filters_c_) {
             result = filter.process(result);
@@ -75,14 +106,21 @@ public:
     }
 
 private:
+    // Pre-computed chain path (48kHz)
+    BiquadChain<A_WEIGHTING_SECTIONS> a_chain_{};
+    BiquadChain<C_WEIGHTING_SECTIONS> c_chain_{};
+    bool use_chain_a_ = false;
+    bool use_chain_c_ = false;
+
+    // Runtime design path (other sample rates)
     std::vector<BiquadCoefficients> sos_a_;
     std::vector<BiquadCoefficients> sos_c_;
     std::vector<BiquadFilter> filters_a_;
     std::vector<BiquadFilter> filters_c_;
 };
 
-// Thread-local processor instance
-thread_local WeightedSignalProcessor g_processor;
+// Static processor instance (single-threaded, no thread_local needed for embedded)
+static WeightedSignalProcessor g_processor;
 
 // Apply A-weighting filter using proper IEC 61672-1 design
 std::vector<float> apply_a_weighting(const std::vector<float>& signal, float sample_rate) {

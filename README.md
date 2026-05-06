@@ -1,16 +1,18 @@
 # noise_info_toolkit_gcc
 
-C++ 实现的轻量级噪声信息计算工具包（v2.0），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
+C++ 实现的轻量级噪声信息计算工具包（v3.0），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
 
 ## 设计目标
 
 纯噪声信息计算，提供两个简洁接口，不包含任何存储、文件解析、事件检测等功能。
+针对 nRF54L15 嵌入式平台优化：零动态内存分配、编译期常量滤波器系数、constexpr 剂量标准表。
+全链路单精度 `float` 计算，无 `double` 软浮点依赖。
 
 ## 两个核心接口
 
-### 接口一：每秒调用 — `process_one_second(buffer_start, buffer_end)`
+### 接口一：逐段调用 — `process_segment(buffer_start, buffer_end, duration_s)`
 
-传入一秒音频原始数据指针（float 或 double），返回该秒所有 **81 个指标**：
+传入音频缓冲区指针（float）和时长（秒），返回该段所有 **81 个指标**：
 
 ```cpp
 #include "noise_processor.hpp"
@@ -19,8 +21,8 @@ using namespace noise_toolkit;
 
 NoiseProcessor processor(48000);  // sample_rate
 
-// 传入 float 或 double 缓冲区指针
-SecondMetrics m = processor.process_one_second(buffer_start, buffer_end);
+// 传入 float 缓冲区指针和时长
+SecondMetrics m = processor.process_segment(buffer_start, buffer_end, 1.0f);
 
 // m 包含 81 个指标：
 //   - 元数据: timestamp, duration_s
@@ -31,20 +33,21 @@ SecondMetrics m = processor.process_one_second(buffer_start, buffer_end);
 //   - 原始矩: n_samples, sum_x/s1, sum_x2/s2, sum_x3/s3, sum_x4/s4
 //   - 1/3倍频程SPL: freq_63hz_spl ~ freq_16khz_spl (9个频段)
 //   - 1/3倍频程矩S1-S4: 每个频段5个值 × 9个频段 = 45个字段
-//     其中包括 n, s1, s2, s3, s4 (用于精确峰度合成)
 ```
 
-### 接口二：每分钟调用 — `aggregate_minute_metrics(second_metrics_array, count)`
+支持灵活时长：1秒、10ms 或任意 `sample_rate * duration_s` 个采样点。
 
-传入该分钟 60 个 `SecondMetrics`，返回聚合后的分钟指标 `MinuteMetrics`：
+### 接口二：聚合调用 — `aggregate_metrics(metrics_array, count, unit_duration_s)`
+
+传入多个 `SecondMetrics`，返回聚合后的分钟指标 `MinuteMetrics`：
 
 ```cpp
 std::array<SecondMetrics, 60> seconds;
 for (int i = 0; i < 60; ++i) {
-    seconds[i] = processor.process_one_second(...);
+    seconds[i] = processor.process_segment(data, data + 48000, 1.0f);
 }
 
-MinuteMetrics minute = processor.aggregate_minute_metrics(seconds);
+MinuteMetrics minute = processor.aggregate_metrics(seconds, 60, 1.0f);
 ```
 
 ## 构建
@@ -55,13 +58,38 @@ cmake .. -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc)
 ```
 
+构建选项：
+
+| 选项 | 默认值 | 说明 |
+|------|--------|------|
+| `BUILD_TESTS` | ON | 构建测试 |
+| `BUILD_EXAMPLES` | ON | 构建示例 |
+
+库始终为静态库 `libnoise_toolkit.a`。SQLite3 在配置时检测但不链接。
+
 ## 运行测试
 
 ```bash
-./test_noise_processor    # 10个单元测试（全部通过）
-./noise_toolkit_example   # 示例程序
-./dose_validator          # 剂量计算理论值验证
+cd build_test
+ctest                            # 运行全部测试
+./test_noise_processor           # 单元测试（12个测试）
+./noise_toolkit_example          # 示例程序
+./dose_validator                 # 剂量计算理论值验证
 ```
+
+## 精度说明
+
+全链路使用单精度 `float`：
+
+| 模块 | 精度 | 说明 |
+|------|------|------|
+| 音频处理（滤波、Leq、Peak） | float | 热路径，每个样本 |
+| 剂量计算（Dose、TWA、LEX,8h） | float | 每秒更新 |
+| 峰度计算（kurtosis、S1-S4） | float | 每秒统计 |
+| 滤波器系数（A/C计权） | float | 编译期常量 |
+| 标准参数（准则级、交换率等） | float | constexpr 表 |
+
+对于整数可精确表示的标准参数（85、90、3、5、8 等），`float` 与 `double` 结果完全一致。
 
 ## 指标列表（81个每秒指标）
 
@@ -86,6 +114,8 @@ make -j$(nproc)
 | OSHA_HCA | 85 | 5 | 8 |
 | EU_ISO | 85 | 3 | 8 |
 
+标准参数以 `constexpr` 编译期常量表存储，通过 `DoseStandard` 枚举索引，零运行时开销。
+
 ## 峰度计算（S1-S4 原始矩统计）
 
 根据规范 4.X.3，使用原始矩统计量 S1-S4 跨时段精确合成峰度 β：
@@ -97,27 +127,63 @@ m4 = S4/n - 4μ·S3/n + 6μ²·S2/n - 3μ⁴
 β = m4 / m2²
 ```
 
+## 与 Python 版本对比
+
+使用 `validation/validate_dose_calculator.py` 对比 Python 和 C++（float）版本，覆盖全部 4 种标准 × 6 种场景：
+
+| 标准 | 指标 | Python (double) | C++ (float) | 差异 |
+|------|------|-----------------|-------------|------|
+| NIOSH | Dose% | 100.000000 | 100.000000 | 0 |
+| NIOSH | TWA | 85.000000 dBA | 85.000000 dBA | 0 |
+| OSHA_PEL | Dose% | 100.000000 | 100.000000 | 0 |
+| OSHA_PEL | TWA | 90.000000 dBA | 90.000000 dBA | 0 |
+| OSHA_HCA | Dose% | 200.000000 | 200.000000 | 0 |
+| EU_ISO | Dose% | 317.480210 | 317.480210 | 0 |
+
+全部 24 组测试用例通过，**Diff=0.00e+00**（因为标准参数均为整数，float 与 double 表示完全相同）。
+
+## 嵌入式优化特性
+
+本项目针对 nRF54L15 (Cortex-M33) 平台进行了以下优化：
+
+| 优化项 | 说明 |
+|--------|------|
+| 全 float 精度 | 剂量计算、TWA、LEX,8h 全部使用 float，无 double 软浮点 |
+| DoseCalculator 重构 | `std::map<string>` → `constexpr` 数组 + 枚举索引，零堆分配 |
+| 滤波器系数固化 | A/C 计权系数预计算为 `constexpr BiquadChain`（48kHz） |
+| alignas 移除 | `SecondMetrics` 去除 64 字节对齐，减少内存浪费 |
+| 异常处理 | 嵌入式构建通过 `NOISE_EMBEDDED_BUILD` 宏禁用 throw/try/catch |
+| thread_local 移除 | 改为普通 `static` 变量 |
+
+PC 构建保留完整 C++ 特性（异常、iostream、string 等）用于验证和调试。
+
 ## 文件结构
 
 ```
 noise_info_toolkit_gcc/
 ├── include/
-│   ├── noise_metrics.hpp       # 核心数据结构（SecondMetrics, MinuteMetrics）
-│   ├── noise_processor.hpp     # 主处理器（两个接口）
-│   ├── dose_calculator.hpp     # 剂量计算器
-│   ├── signal_utils.hpp         # 信号处理工具
-│   ├── iir_filter.hpp          # IIR滤波器设计
-│   └── noise_toolkit.hpp       # 主入口
+│   ├── noise_metrics.hpp              # 核心数据结构（SecondMetrics, MinuteMetrics）
+│   ├── noise_processor.hpp            # 主处理器（两个接口）
+│   ├── dose_calculator.hpp            # 剂量计算器（静态方法，constexpr 表，float）
+│   ├── signal_utils.hpp               # 信号处理工具
+│   ├── iir_filter.hpp                 # IIR 滤波器设计
+│   ├── filter_coefficients_48k.hpp    # 预计算 A/C 计权系数（48kHz）
+│   └── noise_toolkit.hpp              # 主入口
 ├── src/
-│   ├── noise_processor.cpp     # 处理器实现
-│   ├── dose_calculator.cpp      # 剂量计算实现
-│   ├── signal_utils.cpp         # 信号处理实现
-│   └── iir_filter.cpp          # IIR滤波器实现
+│   ├── noise_processor.cpp            # 处理器实现
+│   ├── dose_calculator.cpp            # 剂量计算实现（PC 字符串 API）
+│   ├── signal_utils.cpp               # 信号处理实现
+│   └── iir_filter.cpp                 # IIR 滤波器实现
 ├── tests/
-│   └── test_noise_processor.cpp # 单元测试（10个测试）
+│   └── test_noise_processor.cpp       # 单元测试（12 个测试）
 ├── examples/
-│   └── main.cpp                # 示例程序
-├── dose_validator.cpp          # 剂量计算验证
+│   └── main.cpp                       # 示例程序
+├── dose_validator.cpp                 # 剂量计算验证（独立单文件）
+├── validation/
+│   └── validate_dose_calculator.py    # Python 对比验证脚本
+├── docs/
+│   ├── suggestion.md                  # 嵌入式工程师优化建议
+│   └── development_plan.md            # 开发计划
 └── CMakeLists.txt
 ```
 
@@ -126,17 +192,6 @@ noise_info_toolkit_gcc/
 - C++17 编译器
 - CMake 3.14+
 - pthread
-
-## 与 Python 版本对比
-
-使用 `validation/validate_dose_calculator.py` 对比 Python 和 C++ 版本：
-
-| 标准 | 指标 | Python | C++ | 差异 |
-|------|------|--------|-----|------|
-| NIOSH | Dose% | 0.046840% | 0.046840% | 0 |
-| NIOSH | TWA | 51.706172 dBA | 51.706172 dBA | 0 |
-
-✅ 所有计算结果一致
 
 ## 项目链接
 

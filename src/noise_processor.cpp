@@ -37,11 +37,11 @@ NoiseProcessor::NoiseProcessor(int sample_rate, float reference_pressure)
       reference_pressure_(reference_pressure) {
 }
 
-SecondMetrics NoiseProcessor::process_one_second(const float* buffer_start,
-                                                  const float* buffer_end,
-                                                  float processing_duration_s) noexcept {
+SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
+                                                const float* buffer_end,
+                                                float duration_s) noexcept {
     size_t n = buffer_end - buffer_start;
-    size_t expected_n = static_cast<size_t>(sample_rate_ * processing_duration_s);
+    size_t expected_n = static_cast<size_t>(sample_rate_ * duration_s);
 
     if (n != expected_n || n == 0) {
         return SecondMetrics{};
@@ -49,7 +49,7 @@ SecondMetrics NoiseProcessor::process_one_second(const float* buffer_start,
 
     SecondMetrics m;
 
-    m.duration_s = processing_duration_s;
+    m.duration_s = duration_s;
     m.n_samples = static_cast<int32_t>(n);
 
     float sum_x = 0.0f, sum_x2 = 0.0f, sum_x3 = 0.0f, sum_x4 = 0.0f;
@@ -121,15 +121,15 @@ SecondMetrics NoiseProcessor::process_one_second(const float* buffer_start,
     m.kurtosis_c_weighted = calc_kurtosis(c_weighted.data(), c_weighted.size());
 
     if (m.LAeq > 0) {
-        auto prof_n = dose_calculator_.get_profile(DoseStandard::NIOSH);
-        auto prof_p = dose_calculator_.get_profile(DoseStandard::OSHA_PEL);
-        auto prof_h = dose_calculator_.get_profile(DoseStandard::OSHA_HCA);
-        auto prof_e = dose_calculator_.get_profile(DoseStandard::EU_ISO);
+        const auto& prof_n = DoseCalculator::get_profile(DoseStandard::NIOSH);
+        const auto& prof_p = DoseCalculator::get_profile(DoseStandard::OSHA_PEL);
+        const auto& prof_h = DoseCalculator::get_profile(DoseStandard::OSHA_HCA);
+        const auto& prof_e = DoseCalculator::get_profile(DoseStandard::EU_ISO);
 
-        m.dose_frac_niosh    = dose_calculator_.calculate_dose_increment(m.LAeq, processing_duration_s, prof_n) / 100.0f;
-        m.dose_frac_osha_pel = dose_calculator_.calculate_dose_increment(m.LAeq, processing_duration_s, prof_p) / 100.0f;
-        m.dose_frac_osha_hca = dose_calculator_.calculate_dose_increment(m.LAeq, processing_duration_s, prof_h) / 100.0f;
-        m.dose_frac_eu_iso   = dose_calculator_.calculate_dose_increment(m.LAeq, processing_duration_s, prof_e) / 100.0f;
+        m.dose_frac_niosh    = DoseCalculator::calculate_dose_increment(m.LAeq, duration_s, prof_n) / 100.0f;
+        m.dose_frac_osha_pel = DoseCalculator::calculate_dose_increment(m.LAeq, duration_s, prof_p) / 100.0f;
+        m.dose_frac_osha_hca = DoseCalculator::calculate_dose_increment(m.LAeq, duration_s, prof_h) / 100.0f;
+        m.dose_frac_eu_iso   = DoseCalculator::calculate_dose_increment(m.LAeq, duration_s, prof_e) / 100.0f;
     }
 
     m.overload_flag = (m.LZPeak > OVERLOAD_THRESHOLD);
@@ -184,9 +184,9 @@ SecondMetrics NoiseProcessor::process_one_second(const float* buffer_start,
     return m;
 }
 
-MinuteMetrics NoiseProcessor::aggregate_minute_metrics(const SecondMetrics* second_metrics,
-                                                        int count,
-                                                        float unit_duration_s) noexcept {
+MinuteMetrics NoiseProcessor::aggregate_metrics(const SecondMetrics* second_metrics,
+                                                   int count,
+                                                   float unit_duration_s) noexcept {
     MinuteMetrics result;
     if (count <= 0 || second_metrics == nullptr) return result;
 

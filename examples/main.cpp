@@ -3,8 +3,8 @@
  * @brief Example usage of noise_info_toolkit C++ library (v3.0)
  *
  * This example demonstrates the simplified two-interface design:
- * - Interface 1: process_one_second(buffer, buffer + size, duration) - per-segment audio processing
- * - Interface 2: aggregate_minute_metrics(metrics, count, unit_duration) - aggregation
+ * - Interface 1: process_segment(buffer, buffer + size, duration) - per-segment audio processing
+ * - Interface 2: aggregate_metrics(metrics, count, unit_duration) - aggregation
  */
 
 #include <iostream>
@@ -105,14 +105,14 @@ void test_interface1() {
 
     auto data = generate_sine(1000.0f, 85.0f, 48000, 1.0f);
 
-    SecondMetrics m = processor.process_one_second(data.data(), data.data() + data.size(), 1.0f);
+    SecondMetrics m = processor.process_segment(data.data(), data.data() + data.size(), 1.0f);
 
     std::cout << "Processed 1 second of 1kHz tone at 85 dB SPL:\n";
     print_second_metrics(m);
 
     std::cout << "\nProcessed 1 second of white noise at 90 dB SPL:\n";
     auto noise_data = generate_noise(90.0f, 48000, 1.0f);
-    SecondMetrics m2 = processor.process_one_second(noise_data.data(),
+    SecondMetrics m2 = processor.process_segment(noise_data.data(),
                                                      noise_data.data() + noise_data.size(), 1.0f);
     print_second_metrics(m2);
 }
@@ -124,7 +124,7 @@ void test_interface1_10ms() {
 
     auto data = generate_sine(1000.0f, 85.0f, 48000, 0.01f);
 
-    SecondMetrics m = processor.process_one_second(data.data(), data.data() + data.size(), 0.01f);
+    SecondMetrics m = processor.process_segment(data.data(), data.data() + data.size(), 0.01f);
 
     std::cout << "Processed 10ms of 1kHz tone at 85 dB SPL:\n";
     std::cout << "  duration_s=" << m.duration_s << " n_samples=" << m.n_samples << "\n";
@@ -141,14 +141,14 @@ void test_interface2() {
     for (int i = 0; i < 60; ++i) {
         float spl = 70.0f + 25.0f * (i / 59.0f);
         auto data = generate_noise(spl, 48000, 1.0f);
-        seconds[i] = processor.process_one_second(data.data(), data.data() + data.size(), 1.0f);
+        seconds[i] = processor.process_segment(data.data(), data.data() + data.size(), 1.0f);
         seconds[i].timestamp = static_cast<float>(i);
     }
 
-    MinuteMetrics minute = processor.aggregate_minute_metrics(seconds.data(), 60, 1.0f);
+    MinuteMetrics minute = processor.aggregate_metrics(seconds.data(), 60, 1.0f);
     print_minute_metrics(minute);
 
-    MinuteMetrics minute2 = processor.aggregate_minute_metrics(seconds.data(), 60, 1.0f);
+    MinuteMetrics minute2 = processor.aggregate_metrics(seconds.data(), 60, 1.0f);
     (void)minute2;
 }
 
@@ -162,11 +162,11 @@ void test_interface2_10ms() {
     for (int i = 0; i < 6000; ++i) {
         float spl = 70.0f + 25.0f * (i / 5999.0f);
         auto data = generate_noise(spl, 48000, 0.01f);
-        segments[i] = processor.process_one_second(data.data(), data.data() + data.size(), 0.01f);
+        segments[i] = processor.process_segment(data.data(), data.data() + data.size(), 0.01f);
         segments[i].timestamp = static_cast<float>(i) * 0.01f;
     }
 
-    MinuteMetrics minute = processor.aggregate_minute_metrics(segments.data(), 6000, 0.01f);
+    MinuteMetrics minute = processor.aggregate_metrics(segments.data(), 6000, 0.01f);
     std::cout << "Aggregated 6000 x 10ms segments = " << minute.duration_s << " seconds\n";
     print_minute_metrics(minute);
 }
@@ -184,7 +184,7 @@ void test_frequency_bands() {
 
     for (const auto& [freq, spl] : tones) {
         auto data = generate_sine(freq, spl, 48000, 1.0f);
-        SecondMetrics m = processor.process_one_second(data.data(), data.data() + data.size(), 1.0f);
+        SecondMetrics m = processor.process_segment(data.data(), data.data() + data.size(), 1.0f);
 
         std::cout << std::fixed << std::setprecision(1);
         std::cout << freq << " Hz tone: ";
@@ -200,11 +200,11 @@ void test_qc_flags() {
     NoiseProcessor processor(48000);
 
     auto quiet = generate_noise(20.0f, 48000, 1.0f);
-    SecondMetrics m_quiet = processor.process_one_second(quiet.data(), quiet.data() + quiet.size(), 1.0f);
+    SecondMetrics m_quiet = processor.process_segment(quiet.data(), quiet.data() + quiet.size(), 1.0f);
     std::cout << "Quiet signal (20 dB): underrange=" << m_quiet.underrange_flag << "\n";
 
     auto normal = generate_noise(85.0f, 48000, 1.0f);
-    SecondMetrics m_normal = processor.process_one_second(normal.data(), normal.data() + normal.size(), 1.0f);
+    SecondMetrics m_normal = processor.process_segment(normal.data(), normal.data() + normal.size(), 1.0f);
     std::cout << "Normal signal (85 dB): underrange=" << m_normal.underrange_flag
               << " wearing=" << m_normal.wearing_state << "\n";
 }
@@ -217,7 +217,7 @@ void test_sample_rates() {
     for (int sr : rates) {
         NoiseProcessor processor(sr);
         auto data = generate_sine(1000.0f, 85.0f, sr, 1.0f);
-        SecondMetrics m = processor.process_one_second(data.data(), data.data() + data.size(), 1.0f);
+        SecondMetrics m = processor.process_segment(data.data(), data.data() + data.size(), 1.0f);
 
         std::cout << std::fixed << std::setprecision(1);
         std::cout << sr << " Hz: n_samples=" << m.n_samples

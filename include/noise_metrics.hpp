@@ -76,7 +76,7 @@ struct FreqBandMoments {
  *   - 45: freq band raw moments S1-S4 (9 bands × 5 values)
  *   Total: 2 + 6 + 4 + 3 + 4 + 5 + 9 + 45 = 78 + 3 extra = 81
  */
-struct alignas(64) SecondMetrics {
+struct SecondMetrics {
     //=== Metadata (2) ===
     float timestamp{0.0f};      // Unix timestamp (seconds since epoch)
     float duration_s{1.0f};     // Actual duration (typically 1.0s)
