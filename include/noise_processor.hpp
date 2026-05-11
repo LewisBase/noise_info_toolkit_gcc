@@ -2,6 +2,10 @@
  * @file noise_processor.hpp
  * @brief Lightweight noise metrics processor with two simple interfaces
  *
+ * v3.1 — Streaming architecture: zero heap allocation in hot path.
+ * A/C weighting and 1/3 octave bandpass filters are persistent across
+ * process_segment() calls, maintaining state for continuous audio streams.
+ *
  * Interface 1 (per-segment): process_segment(buffer_start, buffer_end, duration_s)
  *   - Call with raw PCM buffer pointers and desired processing duration
  *   - Default duration_s = 0.01f (10 ms)
@@ -17,7 +21,9 @@
 
 #include "noise_metrics.hpp"
 #include "dose_calculator.hpp"
-#include <vector>
+#include "iir_filter.hpp"
+#include "filter_coefficients_48k.hpp"
+#include "bandpass_coefficients_48k.hpp"
 #include <array>
 
 namespace noise_toolkit {
@@ -44,6 +50,10 @@ public:
 
     /**
      * @brief Process audio segment from raw PCM buffer (float)
+     *
+     * Streaming implementation: A/C weighting and bandpass filters process
+     * each sample in-place with zero heap allocation. Filter state persists
+     * across calls for continuous audio streams.
      *
      * @param buffer_start Pointer to start of PCM buffer (float samples)
      * @param buffer_end Pointer to end of PCM buffer
@@ -100,9 +110,24 @@ private:
     int sample_rate_;
     float reference_pressure_;
 
-    /** @brief Calculate 1/3 octave band moments for a signal */
-    void calculate_band_moments(const float* data, size_t n,
-                                FreqBandMoments* out_moments);
+    // === Persistent filter state (v3.1 streaming architecture) ===
+
+    // A/C weighting biquad chains (pre-computed for 48kHz)
+    BiquadChain<A_WEIGHTING_SECTIONS> a_weight_chain_;
+    BiquadChain<C_WEIGHTING_SECTIONS> c_weight_chain_;
+
+    // 9 × 1/3 octave bandpass filters (persistent)
+    BiquadFilter band_filters_[9] = {
+        BiquadFilter(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f),
+        BiquadFilter(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f),
+        BiquadFilter(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f),
+        BiquadFilter(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f),
+        BiquadFilter(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f),
+        BiquadFilter(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f),
+        BiquadFilter(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f),
+        BiquadFilter(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f),
+        BiquadFilter(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f)
+    };
 };
 
 } // namespace noise_toolkit

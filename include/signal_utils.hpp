@@ -54,6 +54,24 @@ std::vector<float> apply_a_weighting(const std::vector<float>& signal, float sam
 std::vector<float> apply_c_weighting(const std::vector<float>& signal, float sample_rate);
 
 /**
+ * @brief Streaming A-weighting: filter samples in-place (zero heap allocation)
+ *
+ * @param data Pointer to sample buffer (modified in-place)
+ * @param count Number of samples
+ * @param sample_rate Sample rate in Hz
+ */
+void apply_a_weighting_inplace(float* data, size_t count, float sample_rate);
+
+/**
+ * @brief Streaming C-weighting: filter samples in-place (zero heap allocation)
+ *
+ * @param data Pointer to sample buffer (modified in-place)
+ * @param count Number of samples
+ * @param sample_rate Sample rate in Hz
+ */
+void apply_c_weighting_inplace(float* data, size_t count, float sample_rate);
+
+/**
  * @brief Calculate RMS of signal
  */
 float calculate_rms(const std::vector<float>& signal);

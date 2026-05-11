@@ -8,6 +8,7 @@
 #include "signal_utils.hpp"
 #include "iir_filter.hpp"
 #include "filter_coefficients_48k.hpp"
+#include "math_constants.hpp"
 #include <algorithm>
 #include <numeric>
 #include <cmath>
@@ -132,6 +133,45 @@ std::vector<float> apply_a_weighting(const std::vector<float>& signal, float sam
 std::vector<float> apply_c_weighting(const std::vector<float>& signal, float sample_rate) {
     g_processor.init_c_weighting(sample_rate);
     return g_processor.apply_c(signal);
+}
+
+// Streaming A-weighting: filter samples in-place (zero heap allocation)
+void apply_a_weighting_inplace(float* data, size_t count, float sample_rate) {
+    if (sample_rate == 48000.0f) {
+        static BiquadChain<A_WEIGHTING_SECTIONS> chain = A_WEIGHTING_48K;
+        chain.reset();
+        for (size_t i = 0; i < count; ++i) {
+            data[i] = chain.process(data[i]);
+        }
+    } else {
+        // Fallback for non-48kHz: use runtime-designed SOS filters
+        auto sos = filter_design::a_weighting_design(sample_rate);
+        for (const auto& coef : sos) {
+            BiquadFilter f(coef);
+            for (size_t i = 0; i < count; ++i) {
+                data[i] = f.process(data[i]);
+            }
+        }
+    }
+}
+
+// Streaming C-weighting: filter samples in-place (zero heap allocation)
+void apply_c_weighting_inplace(float* data, size_t count, float sample_rate) {
+    if (sample_rate == 48000.0f) {
+        static BiquadChain<C_WEIGHTING_SECTIONS> chain = C_WEIGHTING_48K;
+        chain.reset();
+        for (size_t i = 0; i < count; ++i) {
+            data[i] = chain.process(data[i]);
+        }
+    } else {
+        auto sos = filter_design::c_weighting_design(sample_rate);
+        for (const auto& coef : sos) {
+            BiquadFilter f(coef);
+            for (size_t i = 0; i < count; ++i) {
+                data[i] = f.process(data[i]);
+            }
+        }
+    }
 }
 
 // Calculate RMS value
@@ -364,7 +404,7 @@ std::vector<std::complex<float>> fft(const std::vector<float>& signal) {
 
     // Cooley-Tukey FFT
     for (size_t len = 2; len <= N_padded; len <<= 1) {
-        float ang = 2.0f * M_PI / len;
+        float ang = noise_const::TWO_PI_F / len;
         std::complex<float> wlen(std::cos(ang), std::sin(ang));
 
         for (size_t i = 0; i < N_padded; i += len) {

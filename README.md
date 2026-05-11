@@ -1,11 +1,11 @@
 # noise_info_toolkit_gcc
 
-C++ 实现的轻量级噪声信息计算工具包（v3.0），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
+C++ 实现的轻量级噪声信息计算工具包（v3.1），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
 
 ## 设计目标
 
 纯噪声信息计算，提供两个简洁接口，不包含任何存储、文件解析、事件检测等功能。
-针对 nRF54L15 嵌入式平台优化：零动态内存分配、编译期常量滤波器系数、constexpr 剂量标准表。
+针对 nRF54L15 嵌入式平台优化：零动态内存分配、编译期常量滤波器系数、constexpr 剂量标准表、流式逐样本处理架构。
 全链路单精度 `float` 计算，无 `double` 软浮点依赖。
 
 ## 两个核心接口
@@ -151,9 +151,15 @@ m4 = S4/n - 4μ·S3/n + 6μ²·S2/n - 3μ⁴
 | 全 float 精度 | 剂量计算、TWA、LEX,8h 全部使用 float，无 double 软浮点 |
 | DoseCalculator 重构 | `std::map<string>` → `constexpr` 数组 + 枚举索引，零堆分配 |
 | 滤波器系数固化 | A/C 计权系数预计算为 `constexpr BiquadChain`（48kHz） |
+| bandpass 系数固化 | 1/3 倍频程滤波器系数预计算为 `constexpr BandpassCoeffs`（48kHz） |
 | alignas 移除 | `SecondMetrics` 去除 64 字节对齐，减少内存浪费 |
 | 异常处理 | 嵌入式构建通过 `NOISE_EMBEDDED_BUILD` 宏禁用 throw/try/catch |
 | thread_local 移除 | 改为普通 `static` 变量 |
+| M_PI 移除 | 自定义 `noise_const::PI_F` / `TWO_PI_F` 常量，兼容所有嵌入式工具链 |
+| 流式 A/C 计权 | 逐样本处理，`process_sample()` 接口，零堆分配 |
+| 流式倍频带分析 | 9 个 persistent BiquadFilter，逐样本处理，零堆分配 |
+| `NoiseProcessor` 流式架构 | `process_segment()` 热路径零 vector/new/malloc |
+| `IIRFilter::process_sample()` | 新增流式接口，支持逐样本 in-place 处理 |
 
 PC 构建保留完整 C++ 特性（异常、iostream、string 等）用于验证和调试。
 
@@ -163,17 +169,21 @@ PC 构建保留完整 C++ 特性（异常、iostream、string 等）用于验证
 noise_info_toolkit_gcc/
 ├── include/
 │   ├── noise_metrics.hpp              # 核心数据结构（SecondMetrics, MinuteMetrics）
-│   ├── noise_processor.hpp            # 主处理器（两个接口）
+│   ├── noise_processor.hpp            # 主处理器（两个接口）—— v3.1 流式架构
 │   ├── dose_calculator.hpp            # 剂量计算器（静态方法，constexpr 表，float）
-│   ├── signal_utils.hpp               # 信号处理工具
-│   ├── iir_filter.hpp                 # IIR 滤波器设计
+│   ├── signal_utils.hpp               # 信号处理工具（含流式 weighting 接口）
+│   ├── iir_filter.hpp                 # IIR 滤波器设计（含 process_sample 流式接口）
 │   ├── filter_coefficients_48k.hpp    # 预计算 A/C 计权系数（48kHz）
+│   ├── bandpass_coefficients_48k.hpp  # 预计算 1/3 倍频程带通系数（48kHz）—— NEW
+│   ├── math_constants.hpp             # 数学常量（PI_F, TWO_PI_F）—— NEW
 │   └── noise_toolkit.hpp              # 主入口
 ├── src/
-│   ├── noise_processor.cpp            # 处理器实现
+│   ├── noise_processor.cpp            # 处理器实现 —— v3.1 流式，零堆分配
 │   ├── dose_calculator.cpp            # 剂量计算实现（PC 字符串 API）
-│   ├── signal_utils.cpp               # 信号处理实现
-│   └── iir_filter.cpp                 # IIR 滤波器实现
+│   ├── signal_utils.cpp               # 信号处理实现（含 inplace weighting）
+│   └── iir_filter.cpp                 # IIR 滤波器实现（含 process_sample）
+├── tools/
+│   └── generate_bandpass_coeffs.cpp   # bandpass 系数生成工具 —— NEW
 ├── tests/
 │   └── test_noise_processor.cpp       # 单元测试（12 个测试）
 ├── examples/
@@ -183,7 +193,8 @@ noise_info_toolkit_gcc/
 │   └── validate_dose_calculator.py    # Python 对比验证脚本
 ├── docs/
 │   ├── suggestion.md                  # 嵌入式工程师优化建议
-│   └── development_plan.md            # 开发计划
+│   ├── development_plan.md            # 开发计划
+│   └── 噪声算法嵌入式验证_关键问题与解决方案.md
 └── CMakeLists.txt
 ```
 
@@ -201,3 +212,32 @@ noise_info_toolkit_gcc/
 ## 许可证
 
 待定 / 请参考原 Python 项目许可证
+
+## 变更记录
+
+### v3.1.0 (2026-05-11) — 流式架构 + 嵌入式编译兼容
+
+**Phase 0: M_PI 替换**
+- 新增 `include/math_constants.hpp`，定义 `noise_const::PI_F` / `TWO_PI_F`
+- 替换所有源码中 9 处 `M_PI` 引用，兼容 Zephyr/picolibc/arm-zephyr-eabi 工具链
+
+**Phase 1: 热路径零堆分配**
+- `process_segment()` 内 A/C 计权改为 `BiquadChain::process()` 逐样本处理
+- 新增 `IIRFilter::process_sample(float* data, size_t count)` 流式接口
+- 新增 `apply_a_weighting_inplace()` / `apply_c_weighting_inplace()` 零堆分配接口
+- 倍频带分析改为逐样本 `BiquadFilter::process()` + inline 累积 moments
+- 消除 `process_segment()` 中全部 vector/new/malloc（从 ~26 次降至 0 次）
+
+**Phase 2: 倍频带滤波器持久化**
+- 新增 `include/bandpass_coefficients_48k.hpp`，9 个 1/3 倍频程带通系数预计算为 constexpr
+- 新增 `tools/generate_bandpass_coeffs.cpp` 系数生成工具
+- `NoiseProcessor` 构造时初始化 9 个 persistent `BiquadFilter`，不再每次调用重新设计
+- `NoiseProcessor` 类大小: 528 bytes (0.5 KB)
+
+### v3.0.0 — 初始 C++ 移植
+
+- 从 Python noise_info_toolkit 移植为 C++17
+- 两个核心接口: `process_segment()` + `aggregate_metrics()`
+- 81 个每秒指标 + 聚合分钟指标
+- `DoseCalculator` constexpr 表 + 枚举索引
+- 预计算 A/C 计权 `BiquadChain`（48kHz）

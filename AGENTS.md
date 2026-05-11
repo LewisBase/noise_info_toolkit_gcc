@@ -2,7 +2,9 @@
 
 ## What This Is
 
-C++17 noise dose calculation toolkit, ported from Python `noise_info_toolkit`. Computes occupational noise exposure metrics (LAeq, Dose, TWA, LEX,8h, 1/3 octave bands, kurtosis) per NIOSH/OSHA/EU-ISO standards. All calculations use single-precision `float`.
+C++17 noise dose calculation toolkit (v3.1), ported from Python `noise_info_toolkit`. Computes occupational noise exposure metrics (LAeq, Dose, TWA, LEX,8h, 1/3 octave bands, kurtosis) per NIOSH/OSHA/EU-ISO standards. All calculations use single-precision `float`.
+
+**v3.1 core change**: Hot path rewritten from batch vector processing to streaming per-sample processing. Zero heap allocation in `process_segment()`.
 
 ## Build
 
@@ -32,38 +34,60 @@ Tests use bare `assert()` — a failing test aborts with no output. No Catch2/gt
 
 ```
 include/
-  noise_toolkit.hpp      # main header, utility fn decls
-  noise_metrics.hpp      # SecondMetrics, MinuteMetrics, FreqBandMoments structs + constants
-  noise_processor.hpp    # NoiseProcessor class (two-interface design)
-  dose_calculator.hpp    # DoseCalculator (static), DoseProfile (POD), DoseStandard enum
-  signal_utils.hpp       # Signal struct, weighting/filter/spectral analysis functions
-  iir_filter.hpp         # IIRFilter, BiquadFilter, filter_design namespace, octave_filters namespace
-  filter_coefficients_48k.hpp  # Pre-computed A/C weighting coefficients for 48kHz, BiquadChain template
+  noise_toolkit.hpp              # main header, utility fn decls (some dead code)
+  noise_metrics.hpp              # SecondMetrics, MinuteMetrics, FreqBandMoments structs + constants
+  noise_processor.hpp            # NoiseProcessor class (v3.1 streaming architecture)
+  dose_calculator.hpp            # DoseCalculator (static), DoseProfile (POD), DoseStandard enum
+  signal_utils.hpp               # Signal struct, weighting/filter/spectral analysis functions
+                                #   + apply_a_weighting_inplace / apply_c_weighting_inplace (v3.1)
+  iir_filter.hpp                 # IIRFilter, BiquadFilter, filter_design namespace
+                                #   + IIRFilter::process_sample(float*, size_t) (v3.1)
+  filter_coefficients_48k.hpp    # Pre-computed A/C weighting coefficients for 48kHz, BiquadChain template
+  bandpass_coefficients_48k.hpp  # Pre-computed 1/3 octave bandpass coefficients for 48kHz (v3.1)
+  math_constants.hpp             # noise_const::PI_F / TWO_PI_F (v3.1, replaces M_PI)
 
 src/
-  noise_processor.cpp
-  dose_calculator.cpp    # PC-only string-based API (guarded by NOISE_EMBEDDED_BUILD)
-  signal_utils.cpp
-  iir_filter.cpp
+  noise_processor.cpp            # v3.1: streaming, zero heap allocation in process_segment()
+  dose_calculator.cpp            # PC-only string-based API (guarded by NOISE_EMBEDDED_BUILD)
+  signal_utils.cpp               # v3.1: added inplace weighting functions
+  iir_filter.cpp                 # v3.1: added process_sample(float*, size_t)
+
+tools/
+  generate_bandpass_coeffs.cpp   # Generates bandpass_coefficients_48k.hpp from iir_filter
 ```
 
-**That's it.** No audio_processor, event_detector, event_processor, ring_buffer, database, wav_reader, tdms_converter, or time_history_processor. `noise_toolkit.hpp` has forward declarations for these but they are dead code — the classes don't exist.
+**Dead code**: `noise_toolkit.hpp` has forward declarations for classes that don't exist (audio_processor, event_detector, etc.). These are unused.
 
-## Architecture
+## Architecture (v3.1)
 
 Two-interface design in `NoiseProcessor`:
 
 1. `process_segment(buffer_start, buffer_end, duration_s)` — per-segment audio → `SecondMetrics` (81 indicators)
 2. `aggregate_metrics(second_metrics*, count, unit_duration_s)` — array of `SecondMetrics` → `MinuteMetrics`
 
-`DoseCalculator` is now all-static with a `constexpr` profile table indexed by `DoseStandard` enum. No dynamic allocation. String-based API available only in PC builds (`#ifndef NOISE_EMBEDDED_BUILD`).
+**v3.1 streaming data flow**:
+```
+process_segment(float* buffer, size_t n)
+  ├─ Copy input to A/C scratch buffers (stack, 2 × 48KB for 1s @ 48kHz)
+  ├─ A-weighting: BiquadChain::process() sample-by-sample (constexpr coeffs)
+  ├─ C-weighting: BiquadChain::process() sample-by-sample (constexpr coeffs)
+  ├─ Single pass: accumulate raw moments, energy, peaks, kurtosis
+  ├─ Leq/Peak/kurtosis calculations
+  ├─ Dose calculations
+  └─ 9 × bandpass: BiquadFilter::process() sample-by-sample, inline moment accumulation
+```
+
+All intermediate buffers are stack-allocated (≤ 48000 samples). No vector/new/malloc in the entire call path.
+
+`DoseCalculator` is all-static with a `constexpr` profile table indexed by `DoseStandard` enum. No dynamic allocation. String-based API available only in PC builds (`#ifndef NOISE_EMBEDDED_BUILD`).
 
 ## Key Implementation Details
 
-- **Namespace**: `noise_toolkit` (sub-namespaces: `filter_design`, `octave_filters` in iir_filter)
-- **Precision**: All calculations use single-precision `float`. Dose calculations were previously `double` but have been unified to `float`.
+- **Namespace**: `noise_toolkit` (sub-namespaces: `noise_const` in math_constants, `filter_design`/`octave_filters` in iir_filter)
+- **Precision**: All calculations use single-precision `float`. Dose calculations unified to `float`.
 - **A/C weighting**: Pre-computed `constexpr BiquadChain` for 48kHz in `filter_coefficients_48k.hpp`. Runtime `filter_design::a_weighting_design()` used as fallback for other sample rates.
-- **Bandpass filters**: `noise_processor.cpp` redesigns 9 bandpass filters per `process_one_second()` call. This is a known performance issue.
+- **Bandpass filters**: Pre-computed `constexpr BandpassCoeffs[9]` for 48kHz in `bandpass_coefficients_48k.hpp`. Runtime `filter_design::bandpass()` fallback for other rates. 9 persistent `BiquadFilter` members in `NoiseProcessor`.
+- **M_PI removed**: All `M_PI` replaced with `noise_const::PI_F` / `TWO_PI_F` for embedded toolchain compatibility.
 - **Exceptions**: Guarded by `#ifndef NOISE_EMBEDDED_BUILD` in iir_filter.cpp. PC build still uses throws.
 - **`thread_local`**: Removed from signal_utils.cpp, now uses plain `static`.
 - **`alignas(64)`**: Removed from `SecondMetrics`.
@@ -85,4 +109,4 @@ Two-interface design in `NoiseProcessor`:
 - No `-Wall -Wextra` in CMakeLists.txt
 - Tests use `assert()` which is disabled in Release builds (`-DNDEBUG`)
 - Bandpass filter design (`filter_design::bandpass()`) produces marginally stable filters for narrow bands
-- `process_tdms_cpp.cpp` referenced in old docs does not exist
+- A/C weighting scratch buffers in `process_segment()` are stack-allocated at 2 × 48KB — works for ≤ 1s blocks @ 48kHz, but would need heap or static allocation for larger blocks

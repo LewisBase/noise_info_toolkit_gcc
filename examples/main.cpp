@@ -16,6 +16,7 @@
 #include <chrono>
 
 #include "noise_processor.hpp"
+#include "math_constants.hpp"
 
 using namespace noise_toolkit;
 
@@ -45,7 +46,7 @@ std::vector<float> generate_sine(float freq_hz, float spl_db,
 
     for (size_t i = 0; i < n; ++i) {
         float t = static_cast<float>(i) / sample_rate;
-        data[i] = amplitude * std::sin(2.0f * M_PI * freq_hz * t);
+        data[i] = amplitude * std::sin(noise_const::TWO_PI_F * freq_hz * t);
     }
     return data;
 }

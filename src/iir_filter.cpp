@@ -4,6 +4,7 @@
  */
 
 #include "iir_filter.hpp"
+#include "math_constants.hpp"
 #include <algorithm>
 #include <numeric>
 #ifndef NOISE_EMBEDDED_BUILD
@@ -73,6 +74,34 @@ std::vector<float> IIRFilter::process(const std::vector<float>& signal) {
     return result;
 }
 
+void IIRFilter::process_sample(float* data, size_t count) {
+    for (size_t n = 0; n < count; ++n) {
+        float input = data[n];
+
+        // Shift delay lines
+        for (size_t i = state_b_.size() - 1; i > 0; --i) {
+            state_b_[i] = state_b_[i-1];
+        }
+        state_b_[0] = input;
+
+        for (size_t i = state_a_.size() - 1; i > 0; --i) {
+            state_a_[i] = state_a_[i-1];
+        }
+
+        // Calculate output
+        float output = 0.0f;
+        for (size_t i = 0; i < b_.size(); ++i) {
+            output += b_[i] * state_b_[i];
+        }
+        for (size_t i = 1; i < a_.size(); ++i) {
+            output -= a_[i] * state_a_[i];
+        }
+
+        state_a_[0] = output;
+        data[n] = output;
+    }
+}
+
 // BiquadFilter implementation
 BiquadFilter::BiquadFilter(float b0, float b1, float b2,
                             float a0, float a1, float a2)
@@ -118,12 +147,12 @@ IIRCoefficients butterworth(int order,
 
     // Prewarp frequency for bilinear transform
     double T = 1.0 / sample_rate;
-    double wc = 2.0 / T * std::tan(M_PI * critical_freq * T);
+    double wc = 2.0 / T * std::tan(noise_const::PI_F * critical_freq * T);
 
     // Generate Butterworth analog poles
     std::vector<std::complex<double>> poles;
     for (int k = 0; k < order; ++k) {
-        double angle = M_PI * (2.0 * k + order + 1) / (2.0 * order);
+        double angle = noise_const::PI_F * (2.0 * k + order + 1) / (2.0 * order);
         poles.push_back(std::complex<double>(wc * std::cos(angle), wc * std::sin(angle)));
     }
 
@@ -255,7 +284,7 @@ std::vector<BiquadCoefficients> a_weighting_design(float sample_rate) {
     float f_ref = 1000.0f;
 
     // Calculate gain at 1 kHz and normalize
-    float omega = 2.0f * M_PI * f_ref / sample_rate;
+    float omega = noise_const::TWO_PI_F * f_ref / sample_rate;
     std::complex<float> z(std::cos(omega), std::sin(omega));
 
     std::complex<float> H(1.0f, 0.0f);
@@ -293,7 +322,7 @@ std::vector<BiquadCoefficients> c_weighting_design(float sample_rate) {
     // Section 1: High-frequency shelf
     {
         float fc = 20000.0f;  // Near Nyquist
-        float wc = 2.0f * M_PI * fc;
+        float wc = noise_const::TWO_PI_F * fc;
         float K = std::tan(wc * T / 2.0f);
 
         float a0 = 1.0f + K;
@@ -323,7 +352,7 @@ std::vector<BiquadCoefficients> c_weighting_design(float sample_rate) {
     }
 
     // Normalize gain at 1 kHz
-    float omega = 2.0f * M_PI * 1000.0f / sample_rate;
+    float omega = noise_const::TWO_PI_F * 1000.0f / sample_rate;
     std::complex<float> z(std::cos(omega), std::sin(omega));
 
     std::complex<float> H(1.0f, 0.0f);
@@ -390,8 +419,8 @@ IIRCoefficients bandpass(double low_freq,
     w_high = std::max(0.001, std::min(0.999, w_high));
 
     // Center frequency and bandwidth
-    double w0 = 2.0 * M_PI * std::sqrt(low_freq * high_freq) / sample_rate;
-    double bw = 2.0 * M_PI * (high_freq - low_freq) / sample_rate;
+    double w0 = 2.0 * noise_const::PI_F * std::sqrt(low_freq * high_freq) / sample_rate;
+    double bw = 2.0 * noise_const::PI_F * (high_freq - low_freq) / sample_rate;
 
     // Simplified bandpass design
     // Full implementation would use proper bandpass transformation
@@ -437,7 +466,7 @@ IIRCoefficients design_third_octave(double center_freq,
                                     float sample_rate,
                                     int order) {
     // 1/3 octave bandwidth factor
-    float bandwidth = 0.231f;  // log2(2^(1/3)) = 1/3 octave
+    constexpr float bandwidth = 0.231f;  // log2(2^(1/3)) = 1/3 octave
     float f_lower = center_freq * std::pow(2.0f, -bandwidth/2.0f);
     float f_upper = center_freq * std::pow(2.0f, bandwidth/2.0f);
 

@@ -51,6 +51,17 @@ public:
     std::vector<float> process(const std::vector<float>& signal);
 
     /**
+     * @brief Stream-process: filter input[] in-place, updating internal state
+     *
+     * Zero heap allocation. Suitable for embedded real-time processing.
+     * Filter state persists across calls for continuous audio streams.
+     *
+     * @param data Pointer to sample buffer (modified in-place)
+     * @param count Number of samples
+     */
+    void process_sample(float* data, size_t count);
+
+    /**
      * @brief Reset filter state
      */
     void reset();
