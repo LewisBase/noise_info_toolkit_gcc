@@ -1,6 +1,6 @@
 # noise_info_toolkit_gcc
 
-C++ 实现的轻量级噪声信息计算工具包（v3.1），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
+C++ 实现的轻量级噪声信息计算工具包（v3.1.1），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
 
 ## 设计目标
 
@@ -214,6 +214,14 @@ noise_info_toolkit_gcc/
 待定 / 请参考原 Python 项目许可证
 
 ## 变更记录
+
+### v3.1.1 (2026-05-14) — VLA 动态栈分配，修复嵌入式栈溢出
+
+- 将 `process_segment()` 内硬编码的 `float a_buf_stack[48000]` / `float c_buf_stack[48000]` 替换为 C99 VLA（GCC extension）：`float a_buf[n]` / `float c_buf[n]`
+- 栈 buffer 大小改为按实际传入的样本数 `n` 动态调整，零堆分配
+- 嵌入式场景典型 10 ms block @ 48 kHz：栈使用从 ~375 KiB 降至 ~4 KiB
+- 消除 `process_segment()` 在主线程上的栈溢出问题（嵌入式反馈已复现）
+- GCC `-Wvla` 警告已知晓，嵌入式工具链可通过 `-Wno-vla` 抑制
 
 ### v3.1.0 (2026-05-11) — 流式架构 + 嵌入式编译兼容
 
