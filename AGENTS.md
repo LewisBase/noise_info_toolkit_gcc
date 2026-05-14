@@ -65,10 +65,10 @@ Two-interface design in `NoiseProcessor`:
 1. `process_segment(buffer_start, buffer_end, duration_s)` — per-segment audio → `SecondMetrics` (81 indicators)
 2. `aggregate_metrics(second_metrics*, count, unit_duration_s)` — array of `SecondMetrics` → `MinuteMetrics`
 
-**v3.1 streaming data flow**:
+**v3.2 streaming data flow**:
 ```
 process_segment(float* buffer, size_t n)
-  ├─ Copy input to A/C scratch buffers (stack, 2 × 48KB for 1s @ 48kHz)
+  ├─ Allocate A/C scratch buffers (VLA sized to actual n, zero heap)
   ├─ A-weighting: BiquadChain::process() sample-by-sample (constexpr coeffs)
   ├─ C-weighting: BiquadChain::process() sample-by-sample (constexpr coeffs)
   ├─ Single pass: accumulate raw moments, energy, peaks, kurtosis
@@ -77,7 +77,7 @@ process_segment(float* buffer, size_t n)
   └─ 9 × bandpass: BiquadFilter::process() sample-by-sample, inline moment accumulation
 ```
 
-All intermediate buffers are stack-allocated (≤ 48000 samples). No vector/new/malloc in the entire call path.
+All intermediate buffers are VLAs sized to the actual sample count (not hardcoded 48000). For a typical 10 ms block @ 48 kHz this is only 2 × 480 × 4 bytes ≈ 4 KiB. No vector/new/malloc in the entire call path.
 
 `DoseCalculator` is all-static with a `constexpr` profile table indexed by `DoseStandard` enum. No dynamic allocation. String-based API available only in PC builds (`#ifndef NOISE_EMBEDDED_BUILD`).
 

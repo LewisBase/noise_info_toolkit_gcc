@@ -96,19 +96,12 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
 
     // ---------------------------------------------------------------
     // Phase 1: Copy input to scratch buffers for A/C weighting
-    // (single allocation per buffer, reused across calls via stack)
+    // Stack-allocated VLAs sized to actual sample count (zero heap alloc).
+    // For n ≤ 48000 this fits easily on most stacks (e.g. 8000 samples =
+    // ~64 KiB for a typical 10 ms @ 48 kHz block — well within limits).
     // ---------------------------------------------------------------
-    // We need the original Z signal intact, plus A-weighted and C-weighted copies.
-    // Use stack-allocated buffers for the common case (≤ 48000 samples = 1 second).
-    // For larger blocks, fall back to heap (rare in embedded use).
-    float a_buf_stack[48000];
-    float c_buf_stack[48000];
-    float* a_buf = a_buf_stack;
-    float* c_buf = c_buf_stack;
-
-    // For blocks > 48000 samples, use heap (should not happen in embedded)
-    // In embedded builds with NOISE_EMBEDDED_BUILD, we could use static buffers.
-    // For now, stack buffer handles up to 1 second @ 48kHz.
+    float a_buf[n];
+    float c_buf[n];
 
     // Copy input to scratch buffers
     for (size_t i = 0; i < n; ++i) {
