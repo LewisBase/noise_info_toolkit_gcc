@@ -21,6 +21,7 @@ set(CORE_SOURCES
     src/dose_calculator.cpp
     src/signal_utils.cpp
     src/iir_filter.cpp
+    src/event_detector.cpp
 )
 
 # Create library
@@ -39,6 +40,11 @@ if(BUILD_TESTS)
     add_executable(test_noise_processor tests/test_noise_processor.cpp)
     target_link_libraries(test_noise_processor noise_toolkit)
     add_test(NAME test_noise_processor COMMAND test_noise_processor)
+    
+    # Event detector unit tests
+    add_executable(test_event_detector tests/test_event_detector.cpp)
+    target_link_libraries(test_event_detector noise_toolkit)
+    add_test(NAME test_event_detector COMMAND test_event_detector)
     
     # Dose calculator unit tests (standalone, no library needed)
     add_executable(dose_validator dose_validator.cpp)

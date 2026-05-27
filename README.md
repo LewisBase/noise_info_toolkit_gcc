@@ -1,10 +1,10 @@
 # noise_info_toolkit_gcc
 
-C++ 实现的轻量级噪声信息计算工具包（v3.1.1），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
+C++ 实现的轻量级噪声信息计算工具包（v3.1.2），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
 
 ## 设计目标
 
-纯噪声信息计算，提供两个简洁接口，不包含任何存储、文件解析、事件检测等功能。
+纯噪声信息计算，提供两个简洁接口，不包含任何存储、文件解析等功能。
 针对 nRF54L15 嵌入式平台优化：零动态内存分配、编译期常量滤波器系数、constexpr 剂量标准表、流式逐样本处理架构。
 全链路单精度 `float` 计算，无 `double` 软浮点依赖。
 
@@ -50,6 +50,67 @@ for (int i = 0; i < 60; ++i) {
 MinuteMetrics minute = processor.aggregate_metrics(seconds, 60, 1.0f);
 ```
 
+## 第三个接口：事件检测 — `EventDetector` (v3.1.2)
+
+轻量级事件检测器，用于嵌入式平台检测冲击噪声异常事件。
+独立于 `NoiseProcessor`，零堆分配，所有状态在类成员中。
+
+```cpp
+#include "event_detector.hpp"
+
+using namespace noise_toolkit;
+
+// 创建检测器（使用默认配置）
+EventDetector detector;
+
+// 或自定义配置
+EventDetectorConfig config;
+config.leq_threshold_db = 95.0f;    // 调整触发阈值
+config.peak_threshold_db = 135.0f;   // 调整峰值阈值
+config.debounce_frames = 5;          // 连续5帧异常才触发
+config.cooldown_frames = 10;         // 触发后冷却10帧
+EventDetector detector(config, 48000);
+
+// 检测每帧音频
+while (true) {
+    auto samples = get_audio_block();  // 10ms @ 48kHz = 480 samples
+    
+    EventCheckResult result = detector.check_segment(
+        samples.data(), 
+        samples.data() + samples.size()
+    );
+    
+    if (result == EventCheckResult::IMPULSE_SUSPECT) {
+        // 标记异常事件起始点（嵌入式工程师负责）
+    } else if (result == EventCheckResult::OVERLOAD) {
+        // 标记过载事件起始点
+    }
+}
+```
+
+### 事件检测返回值
+
+| 返回值 | 含义 | 嵌入式工程师操作 |
+|--------|------|-----------------|
+| `NORMAL` | 无异常，正常通过 | 无需操作 |
+| `OVERLOAD` | 过载（LCpeak ≥ 130 dB） | 标记帧起始点 |
+| `UNDERRANGE` | 信号太弱（LZeq < 30 dB） | 可能需要检查传感器 |
+| `IMPULSE_SUSPECT` | 疑似冲击噪声（LZeq ≥ 90 dB） | 标记帧起始点 |
+
+### 配置参数说明
+
+| 类别 | 参数 | 默认值 | 说明 |
+|------|------|--------|------|
+| 触发阈值 | `leq_threshold_db` | 90.0 dB | 声级触发阈值 |
+| 触发阈值 | `peak_threshold_db` | 130.0 dB | 峰值触发阈值 |
+| 触发阈值 | `underrange_threshold_db` | 30.0 dB | 信号太弱阈值 |
+| 防误报 | `debounce_frames` | 3 帧 | 连续 N 帧异常才触发 |
+| 防误报 | `cooldown_frames` | 5 帧 | 触发后 N 帧内不重复触发 |
+
+### 内存占用
+
+`EventDetector` 实例约 **44 bytes**，零堆分配。
+
 ## 构建
 
 ```bash
@@ -72,7 +133,8 @@ make -j$(nproc)
 ```bash
 cd build_test
 ctest                            # 运行全部测试
-./test_noise_processor           # 单元测试（12个测试）
+./test_noise_processor           # 噪声指标单元测试（12个测试）
+./test_event_detector            # 事件检测单元测试（12个测试）
 ./noise_toolkit_example          # 示例程序
 ./dose_validator                 # 剂量计算理论值验证
 ```
@@ -174,18 +236,21 @@ noise_info_toolkit_gcc/
 │   ├── signal_utils.hpp               # 信号处理工具（含流式 weighting 接口）
 │   ├── iir_filter.hpp                 # IIR 滤波器设计（含 process_sample 流式接口）
 │   ├── filter_coefficients_48k.hpp    # 预计算 A/C 计权系数（48kHz）
-│   ├── bandpass_coefficients_48k.hpp  # 预计算 1/3 倍频程带通系数（48kHz）—— NEW
-│   ├── math_constants.hpp             # 数学常量（PI_F, TWO_PI_F）—— NEW
+│   ├── bandpass_coefficients_48k.hpp  # 预计算 1/3 倍频程带通系数（48kHz）
+│   ├── math_constants.hpp             # 数学常量（PI_F, TWO_PI_F）
+│   ├── event_detector.hpp             # 事件检测器（v3.1.2 新增）
 │   └── noise_toolkit.hpp              # 主入口
 ├── src/
 │   ├── noise_processor.cpp            # 处理器实现 —— v3.1 流式，零堆分配
 │   ├── dose_calculator.cpp            # 剂量计算实现（PC 字符串 API）
-│   ├── signal_utils.cpp               # 信号处理实现（含 inplace weighting）
-│   └── iir_filter.cpp                 # IIR 滤波器实现（含 process_sample）
+│   ├── signal_utils.cpp              # 信号处理实现（含 inplace weighting）
+│   ├── iir_filter.cpp                # IIR 滤波器实现（含 process_sample）
+│   └── event_detector.cpp            # 事件检测实现（v3.1.2 新增）
 ├── tools/
-│   └── generate_bandpass_coeffs.cpp   # bandpass 系数生成工具 —— NEW
+│   └── generate_bandpass_coeffs.cpp   # bandpass 系数生成工具
 ├── tests/
-│   └── test_noise_processor.cpp       # 单元测试（12 个测试）
+│   ├── test_noise_processor.cpp       # 噪声指标单元测试（12 个测试）
+│   └── test_event_detector.cpp       # 事件检测单元测试（12 个测试，v3.1.2 新增）
 ├── examples/
 │   └── main.cpp                       # 示例程序
 ├── dose_validator.cpp                 # 剂量计算验证（独立单文件）
@@ -193,7 +258,8 @@ noise_info_toolkit_gcc/
 │   └── validate_dose_calculator.py    # Python 对比验证脚本
 ├── docs/
 │   ├── suggestion.md                  # 嵌入式工程师优化建议
-│   ├── development_plan.md            # 开发计划
+│   ├── development_plan.md           # 开发计划（v3.1）
+│   ├── DEVELOPMENT_PLAN_v3.1.2.md     # v3.1.2 开发计划
 │   └── 噪声算法嵌入式验证_关键问题与解决方案.md
 └── CMakeLists.txt
 ```
@@ -222,6 +288,26 @@ noise_info_toolkit_gcc/
 - 嵌入式场景典型 10 ms block @ 48 kHz：栈使用从 ~375 KiB 降至 ~4 KiB
 - 消除 `process_segment()` 在主线程上的栈溢出问题（嵌入式反馈已复现）
 - GCC `-Wvla` 警告已知晓，嵌入式工具链可通过 `-Wno-vla` 抑制
+
+### v3.1.2 (2026-05-27) — 简化事件检测接口
+
+**新增 `EventDetector` 类**：
+- 轻量级事件检测器，零堆分配，约 44 bytes 内存占用
+- 双触发模式：峰值触发（LCpeak ≥ 阈值）→ `OVERLOAD`，声级触发（LZeq ≥ 阈值）→ `IMPULSE_SUSPECT`
+- 帧计数器去抖：`debounce_frames`（连续 N 帧异常触发）+ `cooldown_frames`（触发后冷却）
+- 独立于 `NoiseProcessor`（方案 A 独立接口），嵌入式工程师可灵活调用
+- 所有参数通过 `EventDetectorConfig` 统一配置，运行时可调
+
+**新增文件**：
+- `include/event_detector.hpp` — 事件检测器类定义
+- `src/event_detector.cpp` — 事件检测器实现
+- `tests/test_event_detector.cpp` — 单元测试（12 个测试）
+- `docs/DEVELOPMENT_PLAN_v3.1.2.md` — v3.1.2 开发计划
+
+**设计原则**：
+- 只负责检测异常，嵌入式工程师负责标记"起始点"
+- 不保存音频、不计算 SEL、不做环形缓冲
+- 简化版替代 Python 版的完整事件检测功能
 
 ### v3.1.0 (2026-05-11) — 流式架构 + 嵌入式编译兼容
 
