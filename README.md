@@ -250,14 +250,6 @@ noise_info_toolkit_gcc/
 
 ## 变更记录
 
-### v3.1.1 (2026-05-14) — VLA 动态栈分配，修复嵌入式栈溢出
-
-- 将 `process_segment()` 内硬编码的 `float a_buf_stack[48000]` / `float c_buf_stack[48000]` 替换为 C99 VLA（GCC extension）：`float a_buf[n]` / `float c_buf[n]`
-- 栈 buffer 大小改为按实际传入的样本数 `n` 动态调整，零堆分配
-- 嵌入式场景典型 10 ms block @ 48 kHz：栈使用从 ~375 KiB 降至 ~4 KiB
-- 消除 `process_segment()` 在主线程上的栈溢出问题（嵌入式反馈已复现）
-- GCC `-Wvla` 警告已知晓，嵌入式工具链可通过 `-Wno-vla` 抑制
-
 ### v3.1.2 (2026-05-27) — 简化事件检测接口
 
 - 新增接口三 `EventDetector::check_segment()`，返回 `EventCheckResult`（NORMAL / OVERLOAD / UNDERRANGE / IMPULSE_SUSPECT）
@@ -267,6 +259,15 @@ noise_info_toolkit_gcc/
 - 参数经 `EventDetectorConfig` 配置，默认值与 `noise_metrics.hpp` 中过载/欠量程阈值对齐
 - 新增 `include/event_detector.hpp`、`src/event_detector.cpp`、`tests/test_event_detector.cpp`（14 个测试）
 - 新增 `docs/DEVELOPMENT_PLAN_v3.1.2.md`；不保存音频、不计算 SEL、不做环形缓冲
+
+
+### v3.1.1 (2026-05-14) — VLA 动态栈分配，修复嵌入式栈溢出
+
+- 将 `process_segment()` 内硬编码的 `float a_buf_stack[48000]` / `float c_buf_stack[48000]` 替换为 C99 VLA（GCC extension）：`float a_buf[n]` / `float c_buf[n]`
+- 栈 buffer 大小改为按实际传入的样本数 `n` 动态调整，零堆分配
+- 嵌入式场景典型 10 ms block @ 48 kHz：栈使用从 ~375 KiB 降至 ~4 KiB
+- 消除 `process_segment()` 在主线程上的栈溢出问题（嵌入式反馈已复现）
+- GCC `-Wvla` 警告已知晓，嵌入式工具链可通过 `-Wno-vla` 抑制
 
 ### v3.1.0 (2026-05-11) — 流式架构 + 嵌入式编译兼容
 
