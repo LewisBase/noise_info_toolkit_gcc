@@ -191,14 +191,14 @@ std::vector<float> calculate_psd(const std::vector<float>& signal,
 /**
  * @brief Convert dB to pressure
  */
-inline float db_to_pressure(float db, float p0) {
+inline float db_to_pressure(float db, float p0 = REFERENCE_PRESSURE) {
     return p0 * std::pow(10.0f, db / 20.0f);
 }
 
 /**
  * @brief Convert pressure to dB
  */
-inline float pressure_to_db(float pressure, float p0) {
+inline float pressure_to_db(float pressure, float p0 = REFERENCE_PRESSURE) {
     if (pressure <= 0) return -std::numeric_limits<float>::infinity();
     return 20.0f * std::log10(pressure / p0);
 }

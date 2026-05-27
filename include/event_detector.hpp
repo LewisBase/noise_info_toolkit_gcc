@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <cmath>
+#include "noise_metrics.hpp"
 
 namespace noise_toolkit {
 
@@ -43,19 +44,23 @@ enum class EventCheckResult : uint8_t {
  *
  * All parameters configurable at runtime or compile-time.
  * Design consistency: thresholds + debounce counters both via config.
+ *
+ * Input buffer must be Z-weighted samples in Pa (same as NoiseProcessor raw path).
+ * Peak trigger compares LZpeak; level trigger compares LZeq.
+ * Defaults align with NoiseProcessor overload / underrange thresholds.
  */
 struct EventDetectorConfig {
     //=== 触发阈值（触发灵敏度控制）===
-    float leq_threshold_db{90.0f};        ///< LZeq 触发阈值 (dB)
-    float peak_threshold_db{130.0f};      ///< LCpeak 触发阈值 (dB)
-    float underrange_threshold_db{30.0f}; ///< 信号太弱阈值 (dB)
+    float leq_threshold_db{90.0f};                          ///< LZeq 触发阈值 (dB)
+    float peak_threshold_db{OVERLOAD_THRESHOLD};            ///< LZpeak 触发阈值 (dB)，默认 140
+    float underrange_threshold_db{UNDERRANGE_THRESHOLD};    ///< LZeq 欠量程阈值 (dB)，默认 30
 
     //=== 去抖动参数（防误报控制）===
-    uint8_t debounce_frames{3};  ///< 连续 N 帧异常才触发（默认 3 帧）
-    uint8_t cooldown_frames{5}; ///< 触发后 N 帧内不重复触发（默认 5 帧）
+    uint8_t debounce_frames{3};  ///< 连续 N 帧异常才触发（0 视为 1）
+    uint8_t cooldown_frames{5};  ///< 声级触发后 N 帧内不重复 IMPULSE（峰值过载不受限）
 
     //=== 参考声压 ===
-    float reference_pressure{20e-6f}; ///< 参考声压 (Pa)
+    float reference_pressure{REFERENCE_PRESSURE}; ///< 参考声压 (Pa)
 
     EventDetectorConfig() = default;
 };
@@ -68,8 +73,8 @@ struct EventDetectorConfig {
  * @brief Lightweight event detector for embedded platforms
  *
  * Detects anomaly events in audio segments:
- * - Peak trigger: LCpeak >= threshold → OVERLOAD
- * - Level trigger: LZeq >= threshold → IMPULSE_SUSPECT
+ * - Peak trigger: LZpeak >= threshold → OVERLOAD（不受 cooldown 抑制）
+ * - Level trigger: LZeq >= threshold → IMPULSE_SUSPECT（debounce + cooldown）
  *
  * Design principles:
  * - Zero heap allocation (all state in class members)
@@ -81,10 +86,8 @@ public:
     /**
      * @brief Constructor
      * @param config Event detection configuration (default: all defaults)
-     * @param sample_rate Sample rate in Hz (default: 48000)
      */
-    explicit EventDetector(const EventDetectorConfig& config = EventDetectorConfig{},
-                           int sample_rate = 48000) noexcept;
+    explicit EventDetector(const EventDetectorConfig& config = EventDetectorConfig{}) noexcept;
 
     /**
      * @brief Check if current segment has anomaly
@@ -105,8 +108,8 @@ public:
     void reset() noexcept;
 
     /**
-     * @brief Check if last segment was flagged as IMPULSE_SUSPECT or OVERLOAD
-     * @return true if impulse was detected in last check
+     * @brief Check if an IMPULSE_SUSPECT or OVERLOAD was detected and not yet cleared
+     * @return true until clear_impulse_flag() or reset()
      */
     bool was_impulse_detected() const noexcept { return impulse_detected_; }
 
@@ -122,18 +125,18 @@ public:
 
 private:
     EventDetectorConfig config_;  ///< Configuration (copied for independence)
-    int sample_rate_;             ///< Sample rate in Hz
 
     //=== 去抖动状态 ===
     uint8_t consecutive_anomaly_count_{0}; ///< 连续异常帧数
-    uint8_t cooldown_remaining_{0};         ///< 冷却剩余帧数
+    uint8_t cooldown_remaining_{0};        ///< 冷却剩余帧数
 
     //=== 标志 ===
-    bool impulse_detected_{false}; ///< 上次检测是否触发
+    bool impulse_detected_{false}; ///< 已触发且未清除
 
     //=== 内部计算 ===
     float compute_leq(const float* start, const float* end) const noexcept;
     float compute_peak(const float* start, const float* end) const noexcept;
+    static uint8_t required_debounce_frames(uint8_t debounce_frames) noexcept;
 };
 
 } // namespace noise_toolkit

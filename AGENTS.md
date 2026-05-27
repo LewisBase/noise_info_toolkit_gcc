@@ -24,7 +24,7 @@ SQLite3 is found at configure time but **never linked** — it's not required.
 cd build_test
 ctest                          # runs test_noise_processor + dose_validator
 ./test_noise_processor         # direct run, uses assert() — no test framework
-./dose_validator               # standalone, no library dependency
+./dose_validator               # built from dose_validator.cpp; standalone double reference, not linked to lib
 ./noise_toolkit_example        # demo of both interfaces
 ```
 
@@ -34,7 +34,7 @@ Tests use bare `assert()` — a failing test aborts with no output. No Catch2/gt
 
 ```
 include/
-  noise_toolkit.hpp              # main header, utility fn decls (some dead code)
+  noise_toolkit.hpp              # umbrella header (includes noise_metrics.hpp)
   noise_metrics.hpp              # SecondMetrics, MinuteMetrics, FreqBandMoments structs + constants
   noise_processor.hpp            # NoiseProcessor class (v3.1 streaming architecture)
   dose_calculator.hpp            # DoseCalculator (static), DoseProfile (POD), DoseStandard enum
@@ -55,8 +55,6 @@ src/
 tools/
   generate_bandpass_coeffs.cpp   # Generates bandpass_coefficients_48k.hpp from iir_filter
 ```
-
-**Dead code**: `noise_toolkit.hpp` has forward declarations for classes that don't exist (audio_processor, event_detector, etc.). These are unused.
 
 ## Architecture (v3.1)
 
@@ -103,8 +101,6 @@ All intermediate buffers are VLAs sized to the actual sample count (not hardcode
 
 ## Known Issues / Tech Debt
 
-- `noise_toolkit.hpp` includes `<vector>` but only for utility function signatures
-- Forward declarations in `noise_toolkit.hpp` reference nonexistent classes (dead code)
 - `signal_utils.hpp` declares `extern` A/C weighting gain vectors that are unused by the IIR filter path
 - No `-Wall -Wextra` in CMakeLists.txt
 - Tests use `assert()` which is disabled in Release builds (`-DNDEBUG`)

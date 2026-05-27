@@ -1,13 +1,24 @@
 # Build
 build_test/
+build/
+cmake-build-*/
 *.o
 *.so
 *.a
 *.out
 
-# Executables
+# Executables (build in source tree or build dir)
 dose_validator
+test_noise_processor
+test_event_detector
+noise_toolkit_example
 process_tdms_cpp
+tools/gen_bp
+
+# Local audio / large data
+audio_files/
+*.wav
+*.tdms
 
 # Python
 __pycache__/
@@ -21,6 +32,3 @@ venv/
 
 # OS
 .DS_Store
-
-*.wav
-tools/gen_bp
