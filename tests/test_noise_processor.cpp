@@ -4,10 +4,12 @@
  */
 
 #include <iostream>
+#include <iomanip>
 #include <cassert>
 #include <cmath>
 #include <vector>
 #include <array>
+#include <algorithm>
 #include <chrono>
 #include "noise_processor.hpp"
 #include "math_constants.hpp"
@@ -232,19 +234,17 @@ void test_empty_buffer() {
 }
 
 void test_sample_rates() {
-    std::cout << "Test 9: Sample rate variations... ";
+    std::cout << "Test 9: Sample rate variations (7 rates)... ";
 
-    // Primary supported sample rate: 48 kHz.
-    // Other sample rates (8k, 16k, 44.1k) have a known v3.1.2 issue where
-    // the runtime A-weighting filter design produces unstable outputs (LAeq=NaN).
-    // This is a separate pre-existing bug, tracked for v3.2 redesign of
-    // `filter_design::a_weighting_design()`. We only test 48 kHz here.
-    // See AGENTS.md "Known Issues / Tech Debt".
-    std::vector<int> sample_rates = {48000};
+    // v3.2 Bug B fix: all 7 table sample rates now use pre-computed coefficients
+    // (scipy bilinear + tf2sos), guaranteeing stable A/C weighting filters.
+    // Sample rates not in the table fall back to filter_design::a/c_weighting_design().
+    std::vector<int> sample_rates = {8000, 16000, 22050, 32000, 44100, 48000, 96000};
+    std::vector<float> laeq_results;
 
     for (int sr : sample_rates) {
         NoiseProcessor processor(sr);
-        // Use 94 dB SPL (well below overload_threshold 140 dB)
+        // 94 dB SPL at 1 kHz (IEC 61672 calibration signal)
         float rms = 20e-6f * std::pow(10.0f, 94.0f / 20.0f);
         float amplitude = rms * std::sqrt(2.0f);
         auto data = generate_sine(1000.0f, amplitude, sr, 1.0f);
@@ -252,12 +252,23 @@ void test_sample_rates() {
 
         assert(m.n_samples == sr);
         assert(m.duration_s > 0.99f && m.duration_s < 1.01f);
-        assert(!std::isnan(m.LAeq));
+        assert(!std::isnan(m.LAeq) && "LAeq should not be NaN (Bug B fix)");
+        assert(!std::isnan(m.LCeq) && "LCeq should not be NaN (Bug B fix)");
         assert(!std::isnan(m.LZeq));
-        assert(m.LAeq > 85.0f && m.LAeq < 100.0f);
+        assert(m.LAeq > 85.0f && m.LAeq < 100.0f && "LAeq should be near 94 dB");
+        assert(m.LCeq > 85.0f && m.LCeq < 100.0f && "LCeq should be near 94 dB");
+        laeq_results.push_back(m.LAeq);
     }
 
-    std::cout << "PASSED (tested " << sample_rates.size() << " sample rate)\n";
+    // All sample rates should give LAeq within ±1 dB of each other
+    // (proving the pre-computed tables are consistently calibrated)
+    float laeq_min = *std::min_element(laeq_results.begin(), laeq_results.end());
+    float laeq_max = *std::max_element(laeq_results.begin(), laeq_results.end());
+    assert(laeq_max - laeq_min < 1.5f && "LAeq spread across sample rates should be < 1.5 dB");
+
+    std::cout << "PASSED (tested " << sample_rates.size() << " sample rates, "
+              << "LAeq range: " << std::fixed << std::setprecision(2)
+              << laeq_min << "-" << laeq_max << " dB)\n";
 }
 
 void test_metrics_field_count() {

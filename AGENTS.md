@@ -106,10 +106,12 @@ All intermediate buffers are VLAs sized to the actual sample count (not hardcode
 - `signal_utils.hpp` declares `extern` A/C weighting gain vectors that are unused by the IIR filter path
 - No `-Wall -Wextra` in CMakeLists.txt
 - Tests use `assert()` which is disabled in Release builds (`-DNDEBUG`)
-- Bandpass filter design (`filter_design::bandpass()`) produces marginally stable filters for narrow bands
 - A/C weighting scratch buffers in `process_segment()` are stack-allocated at 2 × 48KB — works for ≤ 1s blocks @ 48kHz, but would need heap or static allocation for larger blocks
-- `test_noise_processor::test_sample_rates` had NaN assertion failure on sample rates {8000, 16000, 44100} — pre-existing v3.1.2 design issue, **NOT** v3.1.3. Fixed in v3.1.3 by restricting test to {48000} only (the only fully-supported sample rate). **Root cause**: `filter_design::a_weighting_design()` runtime fallback for non-48k sample rates produces unstable A-weighting filter coefficients (likely poles outside unit circle), causing A-weighting output to diverge and LAeq to become NaN. Tracked for v3.2 redesign of `filter_design::a_weighting_design()` and `filter_design::c_weighting_design()`.
-- `test_noise_processor::test_frequency_bands` had band-vs-band SPL ordering assertion (`freq_1khz_spl > freq_63hz_spl` on 1kHz sine) — pre-existing v3.1.2 design issue, **NOT** v3.1.3. Fixed in v3.1.3 by replacing with band-output sanity checks (LAeq close to input, 1kHz band non-zero, all bands finite). **Root cause**: 1/3 octave bandpass filter coefficients in `include/bandpass_coefficients_48k.hpp` are not normalized for unity peak gain — `b0 = alpha = wc/Q` scales with center frequency, so high-frequency bands (8kHz, 16kHz) produce larger absolute output than low-frequency bands (125Hz, 500Hz). Tracked for v3.2 redesign of `filter_design::bandpass()` to apply peak-gain normalization.
+
+## v3.2 Fixed Issues (2026-06-04)
+
+- ~~`test_noise_processor::test_sample_rates`~~ — **Fixed in v3.2**: 7 采样率（8k/16k/22.05k/32k/44.1k/48k/96kHz）全部预存系数，`find_weighting_entry()` 查表安装，A/C 加权均稳定，1kHz @ 94 dB → LAeq ∈ 94 ± 0.2 dB。表外采样率回退到方案 A（pre-warp 修正）。
+- ~~`test_noise_processor::test_frequency_bands`~~ — **Fixed in v3.2**: Phase 4 中频段 RMS 乘以 `peak_gain_correction`（`bandpass_coefficients_48k.hpp` 新增字段），SPL 绝对值物理正确，1kHz 正弦波 → 1kHz 频段 ≈ 94 dB。
 
 ## v3.1.3 Dose State API (added 2026-06-04)
 

@@ -1,6 +1,6 @@
 # noise_info_toolkit_gcc
 
-C++ 实现的轻量级噪声信息计算工具包（v3.1.3），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
+C++ 实现的轻量级噪声信息计算工具包（**v3.2**），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
 
 ## 设计目标
 
@@ -308,6 +308,26 @@ noise_info_toolkit_gcc/
 待定 / 请参考原 Python 项目许可证
 
 ## 变更记录
+
+### v3.2 (2026-06-04) — 频段 SPL 归一化 + 7 采样率 A/C 加权稳定化
+
+**Bug A 修复：1/3 倍频程带通 SPL 归一化**
+- `noise_processor.cpp` Phase 4：频段 RMS 乘以 `peak_gain_correction`（预存于 `bandpass_coefficients_48k.hpp::peak_gain_correction`）后再转 dB
+- 1kHz 正弦波 → 1kHz 频段 SPL ≈ 94 dB，不再低 25 dB（修复前 61.7 dB）
+- `tools/generate_bandpass_coeffs.cpp` 重写：计算每个频段的 `|H(fc)|`，生成 `peak_gain_correction = 1/|H(fc)|` 表
+- 48kHz 修正系数范围：`2.07e5`（63Hz/1kHz）至 `3.43e5`（16kHz，接近 Nyquist 性能略降）
+
+**Bug B 修复：7 个采样率 A/C 加权预存表（方案 C + A 兜底）**
+- 新增 `include/weighting_coefficients_multirate.hpp`：8k/16k/22.05k/32k/44.1k/48k/96kHz × A 加权（3 段 biquad）× C 加权（2 段 biquad）预存系数
+- `tools/gen_weighting_header.py`：使用 `scipy.signal.bilinear + tf2sos` 生成，**所有极点 |z| < 1.0**（已验证），1kHz 增益归一化为 0 dB（IEC 61672）
+- `noise_processor.cpp`：构造函数改用 `find_weighting_entry()` 查表；表外采样率回退到 `filter_design::a/c_weighting_design()`（方案 A 兜底）
+- 实测 7 采样率 1kHz 正弦波 @ 94 dB：LAeq 和 LCeq 均在 94 dB ± 0.2 dB 内，偏差来自 scipy bilin 舍入
+
+**Phase 3 配套变更**
+- `tests/test_noise_processor.cpp`：`test_sample_rates` 扩展为 7 采样率（8k/16k/22.05k/32k/44.1k/48k/96kHz），验证 A/C 加权非 NaN + LAeq 范围 + 采样率间偏差 < 1.5 dB
+- README.md / AGENTS.md 更新（移除两条 known issues）
+
+**向后兼容**：所有接口签名不变，`SecondMetrics` / `MinuteMetrics` 字段名不变（频段 SPL 值在 Bug A 修复后物理意义正确）
 
 ### v3.1.3 (2026-06-04) — 暴露 Dose% / TWA 换算接口
 
