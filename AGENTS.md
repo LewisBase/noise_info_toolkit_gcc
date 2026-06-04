@@ -22,10 +22,12 @@ SQLite3 is found at configure time but **never linked** — it's not required.
 
 ```bash
 cd build_test
-ctest                          # runs test_noise_processor + dose_validator
-./test_noise_processor         # direct run, uses assert() — no test framework
-./dose_validator               # built from dose_validator.cpp; standalone double reference, not linked to lib
-./noise_toolkit_example        # demo of both interfaces
+ctest                                  # runs test_noise_processor + test_event_detector + test_dose_state + dose_validator
+./test_noise_processor                 # direct run, uses assert() — no test framework
+./test_event_detector                  # 14 tests for EventDetector
+./test_dose_state                      # 9 tests for DoseState thin-wrapper (v3.1.3)
+./dose_validator                       # built from dose_validator.cpp; standalone double reference, not linked to lib
+./noise_toolkit_example                # demo of all 4 interfaces (v3.1.3 includes dose state demo)
 ```
 
 Tests use bare `assert()` — a failing test aborts with no output. No Catch2/gtest.
@@ -106,3 +108,21 @@ All intermediate buffers are VLAs sized to the actual sample count (not hardcode
 - Tests use `assert()` which is disabled in Release builds (`-DNDEBUG`)
 - Bandpass filter design (`filter_design::bandpass()`) produces marginally stable filters for narrow bands
 - A/C weighting scratch buffers in `process_segment()` are stack-allocated at 2 × 48KB — works for ≤ 1s blocks @ 48kHz, but would need heap or static allocation for larger blocks
+- `test_noise_processor::test_frequency_bands` is flaky on some build configurations (asserts `freq_1khz_spl > freq_63hz_spl` on 1kHz sine — pre-existing issue, unrelated to v3.1.3 dose state work)
+
+## v3.1.3 Dose State API (added 2026-06-04)
+
+New file: `include/dose_state.hpp` — thin wrapper around existing `DoseCalculator` for cumulative dose tracking.
+
+```cpp
+#include "dose_state.hpp"
+using namespace noise_toolkit;
+
+DoseState state = {};                                              // 8 bytes POD
+state = accumulate_dose_frac(state, m.dose_frac_niosh, dt_s);      // per segment
+float pct = dose_to_pct(state);                                    // Dose%
+float twa = dose_to_twa(state, DoseStandard::NIOSH);               // TWA
+float lex = dose_to_lex8h(state, DoseStandard::NIOSH);             // LEX,8h
+```
+
+Business side holds 1+ `DoseState` (one per standard). Library is stateless. `DoseStandard` enum automatically selects 3dB/5dB log10 coefficient (10.0 / 16.61) — never manually compute 10·log10 for OSHA data.

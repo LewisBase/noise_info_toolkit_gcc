@@ -20,6 +20,7 @@
 
 #include "noise_processor.hpp"
 #include "event_detector.hpp"
+#include "dose_state.hpp"
 #include "math_constants.hpp"
 
 using namespace noise_toolkit;
@@ -373,9 +374,76 @@ void test_interface3_with_noise_processor() {
     }
 }
 
+//==============================================================================
+// v3.1.3 — Dose State (Dose%/TWA/LEX,8h) thin-wrapper demo
+//==============================================================================
+void test_dose_state_demo() {
+    std::cout << "\n========== Interface 4: DoseState (v3.1.3) ==========\n";
+    std::cout << "Demonstrates cumulative dose accumulation + Dose%/TWA/LEX,8h readout.\n";
+    std::cout << "Simulates 1 minute of 90 dB exposure (60 x 1s segments) for fast demo, reports all 4 standards.\n\n";
+
+    NoiseProcessor processor(kSampleRate);
+
+    // 4 dose states, one per standard (business-side held)
+    DoseState niosh_state = {};
+    DoseState osha_pel_state = {};
+    DoseState osha_hca_state = {};
+    DoseState eu_iso_state = {};
+
+    const int n_seconds = 60;             // demo: 1 minute of 90 dB (60 x 1s segments)
+    const float dt_s = 1.0f;              // 1 second segments
+    const float laeq = 90.0f;             // 90 dB constant
+
+    std::cout << "Simulating " << n_seconds << " x 1s segments @ LAeq=" << laeq << " dB (= " << n_seconds/60.0f << " minute total)...\n";
+
+    int report_every = n_seconds / 4;     // report 4 times during sim
+    for (int i = 0; i < n_seconds; ++i) {
+        auto data = generate_noise(laeq, kSampleRate, dt_s);
+        SecondMetrics m = processor.process_segment(
+            data.data(), data.data() + data.size(), dt_s);
+
+        // Update all 4 dose states with their respective dose_frac
+        niosh_state    = accumulate_dose_frac(niosh_state,    m.dose_frac_niosh,    dt_s);
+        osha_pel_state = accumulate_dose_frac(osha_pel_state, m.dose_frac_osha_pel, dt_s);
+        osha_hca_state = accumulate_dose_frac(osha_hca_state, m.dose_frac_osha_hca, dt_s);
+        eu_iso_state   = accumulate_dose_frac(eu_iso_state,   m.dose_frac_eu_iso,   dt_s);
+
+        // Report at quarters
+        if ((i + 1) % report_every == 0) {
+            float hours_elapsed = (i + 1) * dt_s / 3600.0f;
+            std::cout << std::fixed << std::setprecision(2);
+            std::cout << "  [" << hours_elapsed << "h] "
+                      << "NIOSH Dose%=" << dose_to_pct(niosh_state) << "% TWA="
+                      << dose_to_twa(niosh_state, DoseStandard::NIOSH) << " dB  | "
+                      << "OSHA_PEL Dose%=" << dose_to_pct(osha_pel_state) << "% TWA="
+                      << dose_to_twa(osha_pel_state, DoseStandard::OSHA_PEL) << " dB\n";
+        }
+    }
+
+    // Final report
+    std::cout << "\n=== Final (after 1 minute @ 90 dB) ===\n";
+    std::cout << std::fixed << std::setprecision(2);
+    std::cout << "  elapsed_hours = " << niosh_state.elapsed_hours << " h\n\n";
+
+    std::cout << "  Standard   | Dose%   | TWA (dB) | LEX,8h (dB)\n";
+    std::cout << "  -----------|---------|----------|----------\n";
+    std::cout << "  NIOSH      | " << std::setw(6) << dose_to_pct(niosh_state) << "% | "
+              << std::setw(7) << dose_to_twa(niosh_state, DoseStandard::NIOSH) << " | "
+              << std::setw(7) << dose_to_lex8h(niosh_state, DoseStandard::NIOSH) << "\n";
+    std::cout << "  OSHA_PEL   | " << std::setw(6) << dose_to_pct(osha_pel_state) << "% | "
+              << std::setw(7) << dose_to_twa(osha_pel_state, DoseStandard::OSHA_PEL) << " | "
+              << std::setw(7) << dose_to_lex8h(osha_pel_state, DoseStandard::OSHA_PEL) << "\n";
+    std::cout << "  OSHA_HCA   | " << std::setw(6) << dose_to_pct(osha_hca_state) << "% | "
+              << std::setw(7) << dose_to_twa(osha_hca_state, DoseStandard::OSHA_HCA) << " | "
+              << std::setw(7) << dose_to_lex8h(osha_hca_state, DoseStandard::OSHA_HCA) << "\n";
+    std::cout << "  EU_ISO     | " << std::setw(6) << dose_to_pct(eu_iso_state) << "% | "
+              << std::setw(7) << dose_to_twa(eu_iso_state, DoseStandard::EU_ISO) << " | "
+              << std::setw(7) << dose_to_lex8h(eu_iso_state, DoseStandard::EU_ISO) << "\n";
+}
+
 int main() {
     std::cout << "================================================\n";
-    std::cout << "  Noise Info Toolkit C++ v3.1.2\n";
+    std::cout << "  Noise Info Toolkit C++ v3.1.3\n";
     std::cout << "  Example / Manual Verification Demo\n";
     std::cout << "================================================\n";
 
@@ -388,10 +456,11 @@ int main() {
     test_sample_rates();
     test_interface3_event_detector();
     test_interface3_with_noise_processor();
+    test_dose_state_demo();  // v3.1.3
 
     std::cout << "\n================================================\n";
     std::cout << "  All demos completed\n";
-    std::cout << "  Automated tests: ./test_event_detector ./test_noise_processor\n";
+    std::cout << "  Automated tests: ./test_event_detector ./test_noise_processor ./test_dose_state\n";
     std::cout << "================================================\n";
 
     return 0;

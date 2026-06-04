@@ -1,6 +1,6 @@
 # noise_info_toolkit_gcc
 
-C++ 实现的轻量级噪声信息计算工具包（v3.1.2），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
+C++ 实现的轻量级噪声信息计算工具包（v3.1.3），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
 
 ## 设计目标
 
@@ -79,6 +79,65 @@ EventCheckResult r = detector.check_segment(buffer_start, buffer_end);
 ```
 
 典型用法：与 `process_segment()` 相同块长（如 10 ms @ 48 kHz = 480 samples），可在指标计算前后任意调用。
+
+### 接口四：剂量累积与 Dose% / TWA / LEX,8h 换算（v3.1.3 新增）
+
+`DoseState` POD（8 bytes）由业务侧持有，4 个 inline 纯函数作为 `DoseCalculator` 的薄包装，提供 Dose%/TWA/LEX,8h 实时换算。算法库本身保持无状态，零堆分配。
+
+```cpp
+#include "noise_processor.hpp"
+#include "dose_state.hpp"
+
+using namespace noise_toolkit;
+
+NoiseProcessor processor(48000);
+
+// 业务侧持有 4 个 DoseState（每个标准一个）
+DoseState niosh_state = {};
+DoseState osha_state  = {};
+
+while (recording) {
+    auto samples = read_audio_block();
+    SecondMetrics m = processor.process_segment(samples.data(), samples.data() + samples.size(), 0.01f);
+
+    // 1. 累加剂量（库只提供纯函数，状态由业务侧持有）
+    niosh_state = accumulate_dose_frac(niosh_state, m.dose_frac_niosh,    0.01f);
+    osha_state  = accumulate_dose_frac(osha_state,  m.dose_frac_osha_pel, 0.01f);
+
+    // 2. 任意时刻读出累积量（不需等结束录制）
+    if (report_due) {
+        log("NIOSH  Dose%%=%.1f%%  TWA=%.1f dB  LEX,8h=%.1f dB",
+            dose_to_pct(niosh_state),
+            dose_to_twa(niosh_state, DoseStandard::NIOSH),
+            dose_to_lex8h(niosh_state, DoseStandard::NIOSH));
+        log("OSHA   Dose%%=%.1f%%  TWA=%.1f dB  LEX,8h=%.1f dB",
+            dose_to_pct(osha_state),
+            dose_to_twa(osha_state, DoseStandard::OSHA_PEL),
+            dose_to_lex8h(osha_state, DoseStandard::OSHA_PEL));
+    }
+}
+```
+
+**支持的 4 个标准**（通过 `DoseStandard` 枚举选择）：
+
+| 枚举值 | 标准 | 交换率 $q$ | 准则声级 $L_c$ | log10 系数 |
+|--------|------|-----------|---------------|-----------|
+| `NIOSH` | NIOSH 1998 | 3 dB | 85 dBA | 10.0 |
+| `OSHA_PEL` | OSHA 29 CFR 1910.95(b) | 5 dB | 90 dBA | **16.61** |
+| `OSHA_HCA` | OSHA Hearing Conservation | 5 dB | 85 dBA | **16.61** |
+| `EU_ISO` | EU Directive 2003/10/EC | 3 dB | 85 dBA | 10.0 |
+
+⚠️ **5dB 交换率修正系数 16.61**：OSHA 标准强制使用此系数（= 5/log10(2)），自动由 `DoseStandard` 枚举在 `dose_to_twa()` 内部选择，**不要手动用 10·log10 算 OSHA**。
+
+**内存开销**：
+
+| 组件 | 大小 |
+|------|------|
+| `DoseState` POD | 8 bytes |
+| 4 个标准状态 | 32 bytes |
+| nRF54L15 256-512 KB RAM 占比 | < 0.02% |
+
+详见 [`docs/DEVELOPMENT_PLAN_v3.1.3.md`](docs/DEVELOPMENT_PLAN_v3.1.3.md)。
 
 ## 构建
 
@@ -249,6 +308,18 @@ noise_info_toolkit_gcc/
 待定 / 请参考原 Python 项目许可证
 
 ## 变更记录
+
+### v3.1.3 (2026-06-04) — 暴露 Dose% / TWA 换算接口
+
+- 新增 `include/dose_state.hpp`，提供 `DoseState` POD（8 bytes）+ 4 个 inline 纯函数（`accumulate_dose_frac` / `dose_to_pct` / `dose_to_twa` / `dose_to_lex8h`）
+- 4 个函数均为 `DoseCalculator` 已有方法的薄包装（`calculate_twa` / `calculate_lex`），算法层 0 改动
+- 业务侧持有一个或多个 `DoseState`（每标准一个），库不持有跨调用状态
+- `DoseStandard` 枚举自动选择 3dB / 5dB 交换率的 log10 系数（10.0 / 16.61），避免手算错误
+- 新增 `tests/test_dose_state.cpp`（9 个测试，含 5dB 系数回归测试），CMake 子项目接入
+- `examples/main.cpp` 新增 v3.1.3 demo（模拟 1 分钟 @ 90 dB 暴露，输出 4 标准 Dose%/TWA/LEX,8h）
+- 向后兼容：v3.1.2 的 `process_segment` / `aggregate_metrics` / `EventDetector` / `DoseCalculator` 签名与行为均不变
+- 不修改 `SecondMetrics` / `MinuteMetrics` 字段（TWA 是累积量，段级无意义）
+- 详见 [`docs/DEVELOPMENT_PLAN_v3.1.3.md`](docs/DEVELOPMENT_PLAN_v3.1.3.md)
 
 ### v3.1.2 (2026-05-27) — 简化事件检测接口
 

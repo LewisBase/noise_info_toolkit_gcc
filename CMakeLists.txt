@@ -45,7 +45,12 @@ if(BUILD_TESTS)
     add_executable(test_event_detector tests/test_event_detector.cpp)
     target_link_libraries(test_event_detector noise_toolkit)
     add_test(NAME test_event_detector COMMAND test_event_detector)
-    
+
+    # Dose state unit tests (v3.1.3)
+    add_executable(test_dose_state tests/test_dose_state.cpp)
+    target_link_libraries(test_dose_state noise_toolkit)
+    add_test(NAME test_dose_state COMMAND test_dose_state)
+
     # Dose calculator unit tests (standalone, no library needed)
     add_executable(dose_validator dose_validator.cpp)
     target_link_libraries(dose_validator Threads::Threads)
