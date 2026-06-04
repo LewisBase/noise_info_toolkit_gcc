@@ -10,6 +10,7 @@
 #include "signal_utils.hpp"
 #include "iir_filter.hpp"
 #include "math_constants.hpp"
+#include "weighting_coefficients_multirate.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -40,12 +41,29 @@ NoiseProcessor::NoiseProcessor(int sample_rate, float reference_pressure)
       reference_pressure_(reference_pressure) {
 
     // Initialize A/C weighting filter chains
-    if (sample_rate_ == 48000) {
-        // Use pre-computed constexpr coefficients (zero-cost initialization)
-        a_weight_chain_ = A_WEIGHTING_48K;
-        c_weight_chain_ = C_WEIGHTING_48K;
+    // === v3.2 Bug B fix: use pre-computed table for 7 supported sample rates
+    // (8k/16k/22.05k/32k/44.1k/48k/96k); unknown rates fall back to a/c_weighting_design()
+    const auto* entry = find_weighting_entry(sample_rate_);
+    if (entry != nullptr) {
+        // Table hit: install pre-computed coefficients (zero runtime cost)
+        for (int i = 0; i < entry->a_count && i < A_WEIGHTING_SECTIONS; ++i) {
+            a_weight_chain_.sections[i].b0 = entry->a[i].b0;
+            a_weight_chain_.sections[i].b1 = entry->a[i].b1;
+            a_weight_chain_.sections[i].b2 = entry->a[i].b2;
+            a_weight_chain_.sections[i].a0 = 1.0f;
+            a_weight_chain_.sections[i].a1 = entry->a[i].a1;
+            a_weight_chain_.sections[i].a2 = entry->a[i].a2;
+        }
+        for (int i = 0; i < entry->c_count && i < C_WEIGHTING_SECTIONS; ++i) {
+            c_weight_chain_.sections[i].b0 = entry->c[i].b0;
+            c_weight_chain_.sections[i].b1 = entry->c[i].b1;
+            c_weight_chain_.sections[i].b2 = entry->c[i].b2;
+            c_weight_chain_.sections[i].a0 = 1.0f;
+            c_weight_chain_.sections[i].a1 = entry->c[i].a1;
+            c_weight_chain_.sections[i].a2 = entry->c[i].a2;
+        }
     } else {
-        // Runtime design fallback for other sample rates
+        // Fallback: runtime design (方案 A，pre-warp 修正回退)
         auto sos_a = filter_design::a_weighting_design(static_cast<float>(sample_rate_));
         for (size_t i = 0; i < A_WEIGHTING_SECTIONS && i < sos_a.size(); ++i) {
             a_weight_chain_.sections[i] = sos_a[i];
@@ -232,6 +250,47 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
     // ---------------------------------------------------------------
     FreqBandMoments band_moments[9] = {};
 
+    // === v3.2 Bug A fix (SPL-level peak gain correction) ===
+    // The 2nd-order bandpass biquad has peak gain |H(fc)| ∝ fc², causing
+    // low-frequency bands to report SPL ~25 dB lower than high-frequency
+    // bands when fed a signal at their center frequency. We apply a
+    // per-band correction factor to the RMS so the reported SPL is
+    // physically correct. The correction is pre-computed for 48 kHz
+    // and computed on-the-fly for other sample rates.
+    float band_corrections[9] = {};
+    {
+        const float fs = static_cast<float>(sample_rate_);
+        const float BAND_FACTOR = 1.12246204830937f;  // 2^(1/6)
+        for (int b = 0; b < 9; ++b) {
+            float fc = BAND_CENTER_FREQS[b];
+            // For 48 kHz, use the pre-computed correction
+            if (sample_rate_ == 48000) {
+                band_corrections[b] = BANDPASS_COEFFS_48K[b].peak_gain_correction;
+            } else {
+                // Compute |H(fc)| for the dynamically-designed biquad
+                float b0 = band_filters_[b].b0();
+                float b1 = band_filters_[b].b1();
+                float b2 = band_filters_[b].b2();
+                float a0 = band_filters_[b].a0();
+                float a1 = band_filters_[b].a1();
+                float a2 = band_filters_[b].a2();
+                double w0 = 2.0 * noise_const::PI_F * fc / fs;
+                double cos_w = std::cos(w0);
+                double sin_w = std::sin(w0);
+                // H(z=e^jω) numerator/denominator
+                double num_re = b0 + b1 * cos_w + b2 * std::cos(2.0 * w0);
+                double num_im = -b1 * sin_w - b2 * std::sin(2.0 * w0);
+                double den_re = a0 + a1 * cos_w + a2 * std::cos(2.0 * w0);
+                double den_im = -a1 * sin_w - a2 * std::sin(2.0 * w0);
+                double num_mag = std::sqrt(num_re * num_re + num_im * num_im);
+                double den_mag = std::sqrt(den_re * den_re + den_im * den_im);
+                double peak_gain = (den_mag > 1e-30) ? (num_mag / den_mag) : 1.0;
+                band_corrections[b] = (peak_gain > 1e-30)
+                    ? static_cast<float>(1.0 / peak_gain) : 1.0f;
+            }
+        }
+    }
+
     for (int b = 0; b < 9; ++b) {
         // Reset band filter for each segment (matches original behavior)
         band_filters_[b].reset();
@@ -251,7 +310,10 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
         }
 
         float band_rms = std::sqrt(sum_sq_band / n);
-        float spl = (band_rms > 0) ? (20.0f * std::log10(band_rms / reference_pressure_)) : -INFINITY;
+        // Apply v3.2 Bug A peak-gain correction (multiply RMS by correction
+        // factor before converting to dB; equivalent to adding 20·log10(corr) to SPL)
+        float corrected_rms = band_rms * band_corrections[b];
+        float spl = (corrected_rms > 0) ? (20.0f * std::log10(corrected_rms / reference_pressure_)) : -INFINITY;
 
         switch (b) {
             case 0: m.freq_63hz_spl = spl; break;

@@ -90,6 +90,14 @@ public:
     std::vector<float> process(const std::vector<float>& signal);
     void reset();
 
+    // Coefficient accessors (v3.2: needed for per-band peak-gain correction)
+    float b0() const { return b0_; }
+    float b1() const { return b1_; }
+    float b2() const { return b2_; }
+    float a0() const { return a0_; }
+    float a1() const { return a1_; }
+    float a2() const { return a2_; }
+
 private:
     float b0_, b1_, b2_;
     float a0_, a1_, a2_;

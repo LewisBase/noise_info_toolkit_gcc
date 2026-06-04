@@ -444,6 +444,13 @@ IIRCoefficients bandpass(double low_freq,
     b0 /= a0; b1 /= a0; b2 /= a0;
     a1 /= a0; a2 /= a0; a0 = 1.0;
 
+    // Note: Bug A (1/3 octave bandpass non-normalized) is corrected at the
+    // SPL output level via per-band correction factors in
+    // bandpass_coefficients_48k.hpp. Filter-level normalization here would
+    // amplify b coefficients, which can push the biquad's natural poles
+    // (which sit very close to z=1 for high-Q 1/3 octave filters) outside
+    // the unit circle in float32, causing instability.
+
     return {{static_cast<float>(b0), static_cast<float>(b1), static_cast<float>(b2)},
             {static_cast<float>(a0), static_cast<float>(a1), static_cast<float>(a2)}};
 }
