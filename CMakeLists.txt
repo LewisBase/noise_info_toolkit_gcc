@@ -51,6 +51,11 @@ if(BUILD_TESTS)
     target_link_libraries(test_dose_state noise_toolkit)
     add_test(NAME test_dose_state COMMAND test_dose_state)
 
+    # A/C weighting regression tests (v3.2.1)
+    add_executable(test_weighting_response tests/test_weighting_response.cpp)
+    target_link_libraries(test_weighting_response noise_toolkit)
+    add_test(NAME test_weighting_response COMMAND test_weighting_response)
+
     # Dose calculator unit tests (standalone, no library needed)
     add_executable(dose_validator dose_validator.cpp)
     target_link_libraries(dose_validator Threads::Threads)

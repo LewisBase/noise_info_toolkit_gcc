@@ -1,6 +1,6 @@
 # noise_info_toolkit_gcc
 
-C++ 实现的轻量级噪声信息计算工具包（**v3.2**），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
+C++ 实现的轻量级噪声信息计算工具包（**v3.2.1**），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
 
 ## 设计目标
 
@@ -308,6 +308,24 @@ noise_info_toolkit_gcc/
 待定 / 请参考原 Python 项目许可证
 
 ## 变更记录
+
+### v3.2.1 (2026-06-18) — A/C 加权预存表归一化 bug 修复
+
+**Bug 修复**：v3.2 引入的 7 采样率 A/C 加权预存表（`include/weighting_coefficients_multirate.hpp`）在归一化 1kHz 增益时错误地把 1/H_total(1kHz) 只乘到第一节 biquad 的 `b` 系数上，**破坏了滤波器响应形状**——10 kHz 处应衰减 ~82 dB，实际反而**放大 16-45 dB**，导致 LAeq 比 LZeq 系统性偏高 ~35 dB，dose% 偏差 3-4 个数量级。
+
+**修复**：1kHz 归一化改为独立 `a_gain` / `c_gain` 因子（在 `WeightingTableEntry` 结构体里），在 biquad 链输出后单独乘一次，**不修改 biquad b/a 系数**。
+- 新增 `tools/regen_weighting_coefficients.py`（scipy.signal.bilinear 重新生成 7 套系数）
+- 动态生成路径 (`iir_filter.cpp::a/c_weighting_design`) 同样改为 out-param gain
+- 新增 `tests/test_weighting_response.cpp`（5 个回归测试）
+- `noise_processor.cpp` 在 biquad 链 process() 后乘 `a_weight_gain_` / `c_weight_gain_`
+
+**验证**：
+- 1 kHz 正弦波：LAeq = 91 dB（精确 0 dB 增益）across 7 采样率
+- 100 Hz 正弦波：LAeq = 91 - 19.1 = 71.9 dB（IEC 61672 -19.1 dB 衰减）
+- 白噪声端到端：LAeq - LZeq = -3.6 dB（A 加权正确衰减高频），不再是 v3.2 的 +35 dB
+- NIOSH 90 dB × 1s：dose_frac = 1.10e-4（精确等于公式 (1/3600/8) × 2^(5/3)）
+
+**已知限制**：bilinear transform 在 3 段 biquad 上对 fs/4 以上频率有 1-2 dB 误差，在 fs/2 附近可达 5-15 dB。fs=48000 时主要频段（100 Hz - 10 kHz）误差 < 1.3 dB，满足 IEC 61672 Class 2 容差；fs=22050 等低采样率 10 kHz 附近误差较大。如需 Class 1 严格合规，需高阶设计或 matched-z transform（不在 v3.2.1 范围内）。
 
 ### v3.2 (2026-06-04) — 频段 SPL 归一化 + 7 采样率 A/C 加权稳定化
 
