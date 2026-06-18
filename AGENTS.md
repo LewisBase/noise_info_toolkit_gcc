@@ -2,8 +2,9 @@
 
 ## What This Is
 
-C++17 noise dose calculation toolkit (v3.1), ported from Python `noise_info_toolkit`. Computes occupational noise exposure metrics (LAeq, Dose, TWA, LEX,8h, 1/3 octave bands, kurtosis) per NIOSH/OSHA/EU-ISO standards. All calculations use single-precision `float`.
+C++17 noise dose calculation toolkit (v3.3.0), ported from Python `noise_info_toolkit`. Computes occupational noise exposure metrics (LAeq, Dose, TWA, LEX,8h, 1/3 octave bands, kurtosis) per NIOSH/OSHA/EU-ISO standards. All calculations use single-precision `float`.
 
+**v3.3.0**: IEC 61672-1 Class 1 (±0.7 dB) experimental-grade precision via matched-z A/C weighting.
 **v3.1 core change**: Hot path rewritten from batch vector processing to streaming per-sample processing. Zero heap allocation in `process_segment()`.
 
 ## Build
@@ -22,7 +23,7 @@ SQLite3 is found at configure time but **never linked** — it's not required.
 
 ```bash
 cd build_test
-ctest                                  # runs test_noise_processor + test_event_detector + test_dose_state + dose_validator
+ctest                                  # runs 6 test suites: test_noise_processor + test_event_detector + test_dose_state + test_weighting_response + test_class1_precision + dose_validator
 ./test_noise_processor                 # direct run, uses assert() — no test framework
 ./test_event_detector                  # 14 tests for EventDetector
 ./test_dose_state                      # 9 tests for DoseState thin-wrapper (v3.1.3)

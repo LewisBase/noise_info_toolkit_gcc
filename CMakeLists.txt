@@ -56,6 +56,16 @@ if(BUILD_TESTS)
     target_link_libraries(test_weighting_response noise_toolkit)
     add_test(NAME test_weighting_response COMMAND test_weighting_response)
 
+    # Class 1 precision verification (v3.3.0 matched-z)
+    add_executable(test_class1_precision tests/test_class1_precision.cpp)
+    target_link_libraries(test_class1_precision noise_toolkit)
+    add_test(NAME test_class1_precision COMMAND test_class1_precision)
+
+    # End-to-end validation: LAeq, LCeq, Dose on known signals
+    add_executable(test_end_to_end tests/test_end_to_end.cpp)
+    target_link_libraries(test_end_to_end noise_toolkit)
+    add_test(NAME test_end_to_end COMMAND test_end_to_end)
+
     # Dose calculator unit tests (standalone, no library needed)
     add_executable(dose_validator dose_validator.cpp)
     target_link_libraries(dose_validator Threads::Threads)

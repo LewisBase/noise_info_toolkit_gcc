@@ -47,8 +47,17 @@ NoiseProcessor::NoiseProcessor(int sample_rate, float reference_pressure)
     // applied AFTER the biquad chain, not baked into sos[0].b (which distorted high-f response).
     const auto* entry = find_weighting_entry(sample_rate_);
     if (entry != nullptr) {
+        // v3.3.0: initialize unused sections to pass-through (b0=1, all else 0)
+        // Required because matched-z A is 4 sections, C is 3; bilinear A is 3, C is 2.
+        // Shorter chains need the remaining sections to be identity (pass input to output).
+        for (size_t i = 0; i < A_WEIGHTING_SECTIONS; ++i) {
+            a_weight_chain_.sections[i] = BiquadCoefficients{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+        }
+        for (size_t i = 0; i < C_WEIGHTING_SECTIONS; ++i) {
+            c_weight_chain_.sections[i] = BiquadCoefficients{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+        }
         // Table hit: install pre-computed coefficients (zero runtime cost)
-        for (int i = 0; i < entry->a_count && i < A_WEIGHTING_SECTIONS; ++i) {
+        for (int i = 0; i < entry->a_count && i < static_cast<int>(A_WEIGHTING_SECTIONS); ++i) {
             a_weight_chain_.sections[i].b0 = entry->a[i].b0;
             a_weight_chain_.sections[i].b1 = entry->a[i].b1;
             a_weight_chain_.sections[i].b2 = entry->a[i].b2;
@@ -56,7 +65,7 @@ NoiseProcessor::NoiseProcessor(int sample_rate, float reference_pressure)
             a_weight_chain_.sections[i].a1 = entry->a[i].a1;
             a_weight_chain_.sections[i].a2 = entry->a[i].a2;
         }
-        for (int i = 0; i < entry->c_count && i < C_WEIGHTING_SECTIONS; ++i) {
+        for (int i = 0; i < entry->c_count && i < static_cast<int>(C_WEIGHTING_SECTIONS); ++i) {
             c_weight_chain_.sections[i].b0 = entry->c[i].b0;
             c_weight_chain_.sections[i].b1 = entry->c[i].b1;
             c_weight_chain_.sections[i].b2 = entry->c[i].b2;
@@ -70,6 +79,13 @@ NoiseProcessor::NoiseProcessor(int sample_rate, float reference_pressure)
     } else {
         // Fallback: runtime design (方案 A，pre-warp 修正回退)
         // v3.2.1: dynamic path also uses gain factor separation
+        // v3.3.0: pass-through for unused sections
+        for (size_t i = 0; i < A_WEIGHTING_SECTIONS; ++i) {
+            a_weight_chain_.sections[i] = BiquadCoefficients{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+        }
+        for (size_t i = 0; i < C_WEIGHTING_SECTIONS; ++i) {
+            c_weight_chain_.sections[i] = BiquadCoefficients{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+        }
         float gain_a = 1.0f, gain_c = 1.0f;
         auto sos_a = filter_design::a_weighting_design(static_cast<float>(sample_rate_), &gain_a);
         for (size_t i = 0; i < A_WEIGHTING_SECTIONS && i < sos_a.size(); ++i) {

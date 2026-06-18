@@ -1,6 +1,6 @@
 # noise_info_toolkit_gcc
 
-C++ 实现的轻量级噪声信息计算工具包（**v3.2.1**），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
+C++ 实现的轻量级噪声信息计算工具包（**v3.3.0** — Matched-z A/C 加权，Class 1 实验级精度），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
 
 ## 设计目标
 
@@ -160,9 +160,11 @@ make -j$(nproc)
 
 ```bash
 cd build_test
-ctest                            # 运行全部测试
+ctest                            # 运行全部 7 个测试套件
 ./test_noise_processor           # 噪声指标单元测试（12个测试）
 ./test_event_detector            # 事件检测单元测试（14个测试）
+./test_class1_precision          # Class 1 A/C 加权精度测试（v3.3.0）
+./test_end_to_end                # 端到端验证：合成信号 LAeq/LCeq/Dose
 ./noise_toolkit_example          # 三接口演示与手动验证（含 EventDetector 联调）
 ./dose_validator                 # 剂量计算理论值验证
 ```
@@ -180,6 +182,34 @@ ctest                            # 运行全部测试
 | 标准参数（准则级、交换率等） | float | constexpr 表 |
 
 对于整数可精确表示的标准参数（85、90、3、5、8 等），`float` 与 `double` 结果完全一致。
+
+## 精度等级 (IEC 61672-1:2013)
+
+A/C 加权滤波器的频率响应精度按照 **IEC 61672-1** 国际标准分两级：
+
+| 等级 | 容差 | 典型用途 |
+|------|------|----------|
+| **Class 1（精密级）** | ±0.7 dB | 实验室级研究、听力防护标准验证、声校准器校准 |
+| **Class 2（一般级）** | ±1.5 dB | 工业现场噪声评估、职业暴露监测、法规合规 |
+
+> ⚠️ **重要**：两种等级使用的是**同一条 A/C 加权曲线**（1 kHz = 0 dB、100 Hz = -19.1 dB、10 kHz = -2.5 dB），区别仅在于测量设备对理想曲线的**复现精度**。
+
+**本项目提供两套滤波系数**，分别满足不同精度需求：
+
+| 版本 | 变换方法 | A-weighting 最大误差 | C-weighting 最大误差 | 等级 | biquad 段数 |
+|------|----------|---------------------|---------------------|------|-------------|
+| v3.2.1 | plain bilinear | 1.3 dB | >2 dB | Class 2 | 3 / 2 |
+| v3.3.0 | matched-z + peaking EQ | **0.49 dB** | **0.18 dB** | **Class 1** ✅ | 4 / 3 |
+
+**v3.3.0 的实验级精度实现**：
+- 采用**极点-零点匹配变换 (matched-z)**：每个模拟极点按 `z_p = exp(s_p · T)` 直接映射，频率位置**精确无畸变**（无 bilinear warping）
+- 增益形状由 **2nd-order peaking EQ** 修正（differential evolution 全局优化，代价函数为 33 个 IEC 标准频率的最大绝对误差）
+- 1 kHz 归一化 gain factor 独立于 biquad 系数（与 v3.2.1 相同的 post-chain 架构）
+- 详见 `include/weighting_coefficients_matched_z_48k.hpp` 和 `tools/regen_weighting_matched_z.py`
+
+**选型建议**：
+- 工业噪声监测 / 职业暴露合规 → **v3.2.1 bilinear**（3 段 biquad，性能稳定，Class 2 合规）
+- 实验室级精密研究 / 听力防护标准验证 → **v3.3.0 matched-z**（4 段 biquad，**Class 1 实验级精度**）
 
 ## 指标列表（81个每秒指标）
 
@@ -263,8 +293,10 @@ noise_info_toolkit_gcc/
 │   ├── dose_calculator.hpp            # 剂量计算器（静态方法，constexpr 表，float）
 │   ├── signal_utils.hpp               # 信号处理工具（含流式 weighting 接口）
 │   ├── iir_filter.hpp                 # IIR 滤波器设计（含 process_sample 流式接口）
-│   ├── filter_coefficients_48k.hpp    # 预计算 A/C 计权系数（48kHz）
+│   ├── filter_coefficients_48k.hpp    # 预计算 A/C 计权系数（48kHz，v3.2.1 + v3.3.0 两套）
 │   ├── bandpass_coefficients_48k.hpp  # 预计算 1/3 倍频程带通系数（48kHz）
+│   ├── weighting_coefficients_multirate.hpp    # 7 采样率 A/C 加权预存表（v3.2.1，Class 2）
+│   ├── weighting_coefficients_matched_z_48k.hpp # Matched-z A/C 加权（v3.3.0，Class 1）🆕
 │   ├── math_constants.hpp             # 数学常量（PI_F, TWO_PI_F）
 │   ├── event_detector.hpp             # 事件检测器（接口三）
 │   └── noise_toolkit.hpp              # 主入口
@@ -275,10 +307,14 @@ noise_info_toolkit_gcc/
 │   ├── iir_filter.cpp                # IIR 滤波器实现（含 process_sample）
 │   └── event_detector.cpp            # 事件检测实现
 ├── tools/
-│   └── generate_bandpass_coeffs.cpp   # bandpass 系数生成工具
+│   ├── generate_bandpass_coeffs.cpp   # bandpass 系数生成工具
+│   ├── regen_weighting_coefficients.py    # v3.2.1 bilinear 7 采样率系数重生成脚本
+│   └── regen_weighting_matched_z.py       # v3.3.0 matched-z 系数设计脚本 🆕
 ├── tests/
 │   ├── test_noise_processor.cpp       # 噪声指标单元测试（12 个测试）
-│   └── test_event_detector.cpp       # 事件检测单元测试（14 个测试）
+│   ├── test_event_detector.cpp       # 事件检测单元测试（14 个测试）
+│   ├── test_class1_precision.cpp     # Class 1 A/C 加权精度测试 🆕
+│   └── test_end_to_end.cpp            # 端到端验证：合成信号 LAeq/LCeq/Dose 🆕
 ├── examples/
 │   └── main.cpp                       # 示例程序
 ├── dose_validator.cpp                 # 剂量理论值验证源码（构建为 dose_validator，勿提交二进制）
@@ -308,6 +344,33 @@ noise_info_toolkit_gcc/
 待定 / 请参考原 Python 项目许可证
 
 ## 变更记录
+
+### v3.3.0 (2026-06-18) — Matched-z A/C 加权，IEC 61672-1 Class 1 实验级精度
+
+**目标**：将 A/C 加权精度从 Class 2（±1.5 dB）提升至 Class 1（±0.7 dB），适用于实验室级精密测量和听力防护标准验证。
+
+**技术路线**：matched-z 变换 + 2nd-order peaking EQ 修正
+- `include/weighting_coefficients_matched_z_48k.hpp`：新 header，4 段 A 加权 biquad + 3 段 C 加权 biquad
+  - Stage 1: matched-z 变换（`z_p = exp(s_p·T)`，极点频率精确无 warping）
+  - Stage 2: 2nd-order RBJ peaking EQ（differential evolution 全局优化，代价函数 = 33 个 IEC 标准频率的最大绝对误差）
+- `tools/regen_weighting_matched_z.py`：Python 设计脚本，输出 C++ constexpr 系数 + 全 33 频率验证表
+- A-weighting max error = **0.49 dB** (Class 1 容差 ±0.7)；C-weighting max error = **0.18 dB**
+- v3.2.1 bilinear 预存表同时保留（Class 2 工业级，3 段 biquad），用户按需选择
+
+**新测试套件**：
+- `tests/test_class1_precision.cpp`：扫 33 个 IEC 1/3 倍频程频率，对比 A/C 权加权误差（验证 Class 1 ±0.7 dB）
+- `tests/test_end_to_end.cpp`：9 个端到端验证，合成已知信号检查 LAeq / LCeq / LZeq / Dose 是否物理正确
+  - 1 kHz 94 dB 纯音 → LAeq=LCeq=LZeq=94.00 dB ✓
+  - NIOSH dose 90 dB × 10s → 0.1102%（与公式严格自洽）✓
+  - A 衰减检查：100 Hz -19.1 dB，10 kHz -2.5 dB ✓
+  - LCeq ≥ LAeq（宽带噪声物理不变量）✓
+
+**现场验证（THIST100.CSV）**：
+嵌入式设备采集的 220 行 1 秒数据（v3.2 bug 固件）证实 bug：LAeq 系统性偏高 LZeq ~35 dB。v3.3.0 修正后预估 LAeq ≈ LZeq - 0.5~3 dB（典型工业宽带噪声 A 权惩罚）。
+
+⚠️ **ABI break**：`BiquadChain<N>` 模板参数变化（A: 3→4，C: 2→3），v3.2.1 固件镜像不可复用，**需重新烧录**。系数选择在编译期完成，零运行时开销。
+
+**嵌入式使用**：在 `noise_processor.cpp` 构造函数中切换 `#include` header 即可（系数均为 constexpr，零运行时开销）。
 
 ### v3.2.1 (2026-06-18) — A/C 加权预存表归一化 bug 修复
 

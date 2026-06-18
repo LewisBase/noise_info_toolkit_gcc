@@ -51,45 +51,48 @@ struct BiquadChain {
 };
 
 //==============================================================================
-// A-weighting 3-section biquad chain for 48kHz (pre-normalized, a0=1.0)
+// A-weighting 4-section biquad chain for 48kHz (pre-normalized, a0=1.0)
+// v3.3.0: matched-z + 2nd-order peaking EQ correction → IEC 61672-1 Class 1
 //==============================================================================
 
-constexpr size_t A_WEIGHTING_SECTIONS = 3;
+constexpr size_t A_WEIGHTING_SECTIONS = 4;
 
 constexpr BiquadChain<A_WEIGHTING_SECTIONS> A_WEIGHTING_48K = {
     {
-        // Section 0: High-frequency poles at -76617 rad/s (double pole)
-        // Original a0=4.10353756, normalized
-        { 4.91024574f, -9.82049148f, 4.91024574f, 1.0f,
-          0.02539252f, 0.00016120f },
-        // Section 1: Mid-frequency poles at -4636 and -676.7 rad/s
-        // Original a0=1.055719018, normalized
-        { 0.94722174f, 0.0f, -0.94722174f, 1.0f,
-          -1.89379803f, 0.89508891f },
-        // Section 2: Low-frequency poles at -129.4 rad/s (double pole)
-        // Original a0=1.002697587, normalized
-        { 0.99730967f, -1.99461934f, 0.99730967f, 1.0f,
-          -1.99461577f, 0.99462285f }
+        // Section 0: High-frequency matched-z pole (12194 Hz analog)
+        { 1.00000000f,  0.00000000f,  0.00000000f, 1.0f,
+         -0.40532256f,  0.04107159f },
+        // Section 1: Mid-frequency matched-z pole (737.86 + 107.65 Hz analog)
+        { 1.00000000f, -2.00000000f,  1.00000000f, 1.0f,
+         -1.89393899f,  0.89522729f },
+        // Section 2: Low-frequency matched-z pole (20.6 Hz analog, double)
+        { 1.00000000f, -2.00000000f,  1.00000000f, 1.0f,
+         -1.99461446f,  0.99462171f },
+        // Section 3: 2nd-order peaking EQ correction (differential evolution optimized)
+        { 0.81132790f,  0.84654423f,  0.16617729f, 1.0f,
+          0.84654423f, -0.02249481f }
     },
     {0}  // state: zero-initialized
 };
 
 //==============================================================================
-// C-weighting 2-section biquad chain for 48kHz (pre-normalized, a0=1.0)
+// C-weighting 3-section biquad chain for 48kHz (pre-normalized, a0=1.0)
+// v3.3.0: matched-z + 1st-order shelf correction → IEC 61672-1 Class 1
 //==============================================================================
 
-constexpr size_t C_WEIGHTING_SECTIONS = 2;
+constexpr size_t C_WEIGHTING_SECTIONS = 3;
 
 constexpr BiquadChain<C_WEIGHTING_SECTIONS> C_WEIGHTING_48K = {
     {
-        // Section 0: High-frequency shelf
-        // Original a0=4.732050419, normalized
-        { 0.05172280f, 0.05172280f, 0.0f, 1.0f,
-          0.57735023f, 0.0f },
-        // Section 1: Low-frequency poles at -129.4 rad/s
-        // Original a0=1.002697587, normalized
-        { 0.99730967f, 0.0f, -0.99730967f, 1.0f,
-          -1.99461577f, 0.99462285f }
+        // Section 0: High-frequency matched-z pole (12194 Hz analog)
+        { 1.00000000f,  0.00000000f,  0.00000000f, 1.0f,
+         -0.40532256f,  0.04107159f },
+        // Section 1: Low-frequency matched-z pole (20.6 Hz analog, double)
+        { 1.00000000f, -2.00000000f,  1.00000000f, 1.0f,
+         -1.99461446f,  0.99462171f },
+        // Section 2: 1st-order shelf correction (Nelder-Mead optimized)
+        { 0.76934566f, -0.25710082f,  0.00000000f, 1.0f,
+         -0.19553573f,  0.00000000f }
     },
     {0}  // state: zero-initialized
 };
