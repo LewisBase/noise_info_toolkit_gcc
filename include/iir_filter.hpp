@@ -134,16 +134,18 @@ IIRCoefficients bandpass(double low_freq,
 /**
  * @brief Design A-weighting filter (IEC 61672-1:2013)
  * @param sample_rate Sample rate in Hz
+ * @param gain_out Output: 1kHz normalization factor to apply AFTER biquad chain (optional)
  * @return Biquad sections for A-weighting
  */
-std::vector<BiquadCoefficients> a_weighting_design(float sample_rate);
+std::vector<BiquadCoefficients> a_weighting_design(float sample_rate, float* gain_out = nullptr);
 
 /**
  * @brief Design C-weighting filter (IEC 61672-1:2013)
  * @param sample_rate Sample rate in Hz
+ * @param gain_out Output: 1kHz normalization factor to apply AFTER biquad chain (optional)
  * @return Biquad sections for C-weighting
  */
-std::vector<BiquadCoefficients> c_weighting_design(float sample_rate);
+std::vector<BiquadCoefficients> c_weighting_design(float sample_rate, float* gain_out = nullptr);
 
 /**
  * @brief Design Z-weighting filter (flat, unity gain)

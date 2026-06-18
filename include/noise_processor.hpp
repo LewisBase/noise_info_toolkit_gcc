@@ -116,6 +116,11 @@ private:
     BiquadChain<A_WEIGHTING_SECTIONS> a_weight_chain_;
     BiquadChain<C_WEIGHTING_SECTIONS> c_weight_chain_;
 
+    // v3.2.1: 1kHz normalization factors applied AFTER biquad chain output
+    // (separate from biquad b/a coefficients — see weighting_coefficients_multirate.hpp)
+    float a_weight_gain_ = 1.0f;
+    float c_weight_gain_ = 1.0f;
+
     // 9 × 1/3 octave bandpass filters (persistent)
     BiquadFilter band_filters_[9] = {
         BiquadFilter(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f),

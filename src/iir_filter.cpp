@@ -217,7 +217,7 @@ IIRCoefficients bilinear_transform(const std::vector<std::complex<double>>& anal
 // Transfer function from analog domain:
 // H(s) = K * s^4 / [(s + 129.4)^2 * (s + 676.7) * (s + 4636) * (s + 76617)^2]
 // Where K is chosen for 0 dB gain at 1 kHz
-std::vector<BiquadCoefficients> a_weighting_design(float sample_rate) {
+std::vector<BiquadCoefficients> a_weighting_design(float sample_rate, float* gain_out) {
     std::vector<BiquadCoefficients> sos;
 
     float T = 1.0f / sample_rate;
@@ -311,7 +311,7 @@ std::vector<BiquadCoefficients> a_weighting_design(float sample_rate) {
 
 // C-weighting filter design (IEC 61672-1:2013)
 // Similar to A-weighting but with different pole locations
-std::vector<BiquadCoefficients> c_weighting_design(float sample_rate) {
+std::vector<BiquadCoefficients> c_weighting_design(float sample_rate, float* gain_out) {
     std::vector<BiquadCoefficients> sos;
 
     float T = 1.0f / sample_rate;
