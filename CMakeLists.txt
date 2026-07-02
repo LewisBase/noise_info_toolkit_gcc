@@ -66,6 +66,11 @@ if(BUILD_TESTS)
     target_link_libraries(test_end_to_end noise_toolkit)
     add_test(NAME test_end_to_end COMMAND test_end_to_end)
 
+    # Kurtosis WAV bug reproduction test (v3.3.1)
+    add_executable(test_kurtosis_wav tests/test_kurtosis_wav.cpp)
+    target_link_libraries(test_kurtosis_wav noise_toolkit)
+    add_test(NAME test_kurtosis_wav COMMAND test_kurtosis_wav)
+
     # Dose calculator unit tests (standalone, no library needed)
     add_executable(dose_validator dose_validator.cpp)
     target_link_libraries(dose_validator Threads::Threads)

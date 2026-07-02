@@ -169,10 +169,15 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
     // ---------------------------------------------------------------
     // Phase 3: Compute all metrics in a single pass (zero heap alloc)
     // ---------------------------------------------------------------
+    // v3.3.1: Accumulate weighted moments (s1-s4) for ALL three weightings
+    // in the main loop, then compute kurtosis from moments.  This eliminates
+    // dependency on the VLA buffers for kurtosis (a_buf/c_buf may be
+    // corrupted by stack issues on memory-constrained embedded platforms).
     float sum_x = 0.0f, sum_x2 = 0.0f, sum_x3 = 0.0f, sum_x4 = 0.0f;
+    float sum_a1 = 0.0f, sum_a2 = 0.0f, sum_a3 = 0.0f, sum_a4 = 0.0f;
+    float sum_c1 = 0.0f, sum_c2 = 0.0f, sum_c3 = 0.0f, sum_c4 = 0.0f;
     float sum_a_sq = 0.0f, sum_c_sq = 0.0f, sum_z_sq = 0.0f;
     float peak_z = 0.0f, peak_c = 0.0f;
-    float mean_a = 0.0f, mean_c = 0.0f, mean_z = 0.0f;
 
     for (size_t i = 0; i < n; ++i) {
         float z = buffer_start[i];
@@ -186,9 +191,23 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
         sum_x3 += z2 * z;
         sum_x4 += z2 * z2;
 
+        // A-weighted moments (for kurtosis)
+        float a2 = a * a;
+        sum_a1 += a;
+        sum_a2 += a2;
+        sum_a3 += a2 * a;
+        sum_a4 += a2 * a2;
+
+        // C-weighted moments (for kurtosis)
+        float c2 = c * c;
+        sum_c1 += c;
+        sum_c2 += c2;
+        sum_c3 += c2 * c;
+        sum_c4 += c2 * c2;
+
         // Energy accumulators for Leq
-        sum_a_sq += a * a;
-        sum_c_sq += c * c;
+        sum_a_sq += a2;
+        sum_c_sq += c2;
         sum_z_sq += z2;
 
         // Peak tracking
@@ -196,11 +215,6 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
         float abs_c = std::abs(c);
         if (abs_z > peak_z) peak_z = abs_z;
         if (abs_c > peak_c) peak_c = abs_c;
-
-        // Kurtosis means
-        mean_a += a;
-        mean_c += c;
-        mean_z += z;
     }
 
     // Store raw moments
@@ -209,8 +223,14 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
     m.sum_x3 = sum_x3;
     m.sum_x4 = sum_x4;
 
-    // Beta kurtosis from raw moments
+    // Kurtosis from raw moments (all three weightings)
+    // v3.3.1: Use calculate_kurtosis_from_moments for ALL weightings.
+    // This method uses pre-accumulated moments (s1-s4) which are
+    // reliable scalars, NOT dependent on VLA buffer integrity.
     m.beta_kurtosis = calculate_kurtosis_from_moments(m.n_samples, sum_x, sum_x2, sum_x3, sum_x4);
+    m.kurtosis_total = m.beta_kurtosis;  // Z-weighted kurtosis (same as beta)
+    m.kurtosis_a_weighted = calculate_kurtosis_from_moments(m.n_samples, sum_a1, sum_a2, sum_a3, sum_a4);
+    m.kurtosis_c_weighted = calculate_kurtosis_from_moments(m.n_samples, sum_c1, sum_c2, sum_c3, sum_c4);
 
     // Leq calculations
     auto calc_leq_from_sum_sq = [this](float sum_sq, size_t n_) -> float {
@@ -230,27 +250,6 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
 
     // LAFmax approximation (Leq + 3 dB as in original)
     m.LAFmax = m.LAeq + 3.0f;
-
-    // Kurtosis calculations
-    auto calc_kurtosis_from_data = [](const float* data, size_t n_, float mean_val) -> float {
-        if (n_ < 4) return 3.0f;
-        float m2 = 0.0f, m4 = 0.0f;
-        for (size_t i = 0; i < n_; ++i) {
-            float d = data[i] - mean_val;
-            float d2 = d * d;
-            m2 += d2;
-            m4 += d2 * d2;
-        }
-        m2 /= n_;
-        m4 /= n_;
-        if (m2 <= 0) return 3.0f;
-        return m4 / (m2 * m2);
-    };
-
-    float inv_n = 1.0f / static_cast<float>(n);
-    m.kurtosis_a_weighted = calc_kurtosis_from_data(a_buf, n, mean_a * inv_n);
-    m.kurtosis_c_weighted = calc_kurtosis_from_data(c_buf, n, mean_c * inv_n);
-    m.kurtosis_total = calc_kurtosis_from_data(buffer_start, n, mean_z * inv_n);
 
     // Dose calculations
     if (m.LAeq > 0) {
