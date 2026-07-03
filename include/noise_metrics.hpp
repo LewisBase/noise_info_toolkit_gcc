@@ -59,35 +59,43 @@ struct FreqBandMoments {
 };
 
 //==============================================================================
-// Per-Second Metrics (81 fields total)
+// Per-Second Metrics (82 fields total) — v3.3.0 LAPeak added
 //==============================================================================
 
 /**
- * @brief Single second metrics - all 81 indicators
+ * @brief Single second metrics - 82 indicators (v3.3.0: LAPeak added)
  *
  * Field count breakdown:
  *   - 2: timestamp, duration_s
- *   - 6: LAeq, LCeq, LZeq, LAFmax, LZpeak, LCpeak
+ *   - 7: LAeq, LCeq, LZeq, LAFmax, LZPeak, LCPeak, LAPeak   [v3.3.0: +1 LAPeak]
  *   - 4: dose_frac_niosh/osha_pel/osha_hca/eu_iso
- *   - 3: overload_flag, underrange_flag, wearing_state
+ *   - 3: overload_flag (LZPeak > 140 dB), underrange_flag, wearing_state
  *   - 4: kurtosis_total/a_weighted/c_weighted, beta_kurtosis
  *   - 5: n_samples, sum_x/s1, sum_x2/s2, sum_x3/s3, sum_x4/s4
  *   - 9: freq band SPLs (63Hz-16kHz)
  *   - 45: freq band raw moments S1-S4 (9 bands × 5 values)
- *   Total: 2 + 6 + 4 + 3 + 4 + 5 + 9 + 45 = 78 + 3 extra = 81
+ *   Total: 2 + 7 + 4 + 3 + 4 + 5 + 9 + 45 = 79 (+ 3 padding bytes); count = 82
+ *
+ * overload 事件判定 (per IEC 61672-1 Class 1):
+ *   - OVERLOAD = LZPeak > 140 dB (OVERLOAD_THRESHOLD constant)
+ *   - IMPULSE_SUSPECT = LZeq >= 90 dB 连续 debounce_frames 帧 (EventDetector 内部状态)
+ *   - 接口一/二只暴露 overload_flag/overload_count (基于 LZPeak > 140);
+ *     IMPULSE_SUSPECT 判定需调用接口三 EventDetector
+ *   - v3.3.0 加 LAPeak: 听力损伤评估关键指标 (与 LZPeak/LCPeak 组成加权 peak 三件套)
  */
 struct SecondMetrics {
     //=== Metadata (2) ===
     float timestamp{0.0f};      // Unix timestamp (seconds since epoch)
     float duration_s{1.0f};     // Actual duration (typically 1.0s)
 
-    //=== Sound Levels (6) ===
+    //=== Sound Levels (7) — v3.3.0 LAPeak added ===
     float LAeq{0.0f};           // A-weighted equivalent SPL
     float LCeq{0.0f};           // C-weighted equivalent SPL
     float LZeq{0.0f};           // Z-weighted (unweighted) equivalent SPL
     float LAFmax{0.0f};         // A-weighted fast time-weighted max
-    float LZPeak{0.0f};         // Z-weighted peak level
+    float LZPeak{0.0f};         // Z-weighted peak level (OVERLOAD 判定主依据)
     float LCPeak{0.0f};         // C-weighted peak level
+    float LAPeak{0.0f};         // A-weighted peak level [v3.3.0 added] — 听力损伤评估关键指标
 
     //=== Dose Increments (4) ===
     float dose_frac_niosh{0.0f};     // NIOSH dose fraction (0-1)
@@ -96,9 +104,9 @@ struct SecondMetrics {
     float dose_frac_eu_iso{0.0f};    // EU/ISO dose fraction
 
     //=== Quality Control (3) ===
-    bool overload_flag{false};    // Peak exceeds 140 dB
-    bool underrange_flag{false};  // LAeq below 30 dB
-    bool wearing_state{true};     // Meter wearing detection
+    bool overload_flag{false};    // LZPeak > 140 dB (OVERLOAD_THRESHOLD); per IEC 61672-1 Class 1 过载判定
+    bool underrange_flag{false};  // LAeq < 30 dB (UNDERRANGE_THRESHOLD); 传感器信号太低
+    bool wearing_state{true};     // LAeq > 40 dB 表示佩戴中 (粗略检测)
 
     //=== Kurtosis Metrics (4) ===
     float kurtosis_total{3.0f};      // Z-weighted (raw signal) kurtosis (Pearson, normal=3)
@@ -176,9 +184,11 @@ struct MinuteMetrics {
     float LCeq{0.0f};
     float LZeq{0.0f};
 
-    //=== Peak Levels (2) ===
+    //=== Peak Levels (4) — v3.3.0 LAPeak + LCPeak added ===
     float LAFmax{0.0f};
-    float LZPeak{0.0f};
+    float LZPeak{0.0f};        // Z-weighted peak (max across seconds in minute)
+    float LCPeak{0.0f};        // C-weighted peak (max across seconds in minute)
+    float LAPeak{0.0f};        // A-weighted peak (max across seconds in minute) [v3.3.0 added] — 听力损伤评估关键指标
 
     //=== Dose Accumulation (4) ===
     float dose_frac_niosh{0.0f};
