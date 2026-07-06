@@ -26,7 +26,7 @@ SecondMetrics m = processor.process_segment(buffer_start, buffer_end, 1.0f);
 
 // m 包含 81 个指标：
 //   - 元数据: timestamp, duration_s
-//   - 声级: LAeq, LCeq, LZeq, LAFmax, LZpeak, LCpeak
+//   - 声级: LAeq, LCeq, LZeq, LAFmax, LZpeak, LCpeak, LAPeak    [v3.3.0+LAPeak] 
 //   - 剂量: dose_frac_niosh/osha_pel/osha_hca/eu_iso
 //   - QC: overload_flag, underrange_flag, wearing_state
 //   - 峰度: kurtosis_total, kurtosis_a_weighted, kurtosis_c_weighted, beta_kurtosis
@@ -211,19 +211,19 @@ A/C 加权滤波器的频率响应精度按照 **IEC 61672-1** 国际标准分�
 - 工业噪声监测 / 职业暴露合规 → **v3.2.1 bilinear**（3 段 biquad，性能稳定，Class 2 合规）
 - 实验室级精密研究 / 听力防护标准验证 → **v3.3.0 matched-z**（4 段 biquad，**Class 1 实验级精度**）
 
-## 指标列表（81个每秒指标）
+## 指标列表（82个每秒指标 — v3.3.0+LAPeak）
 
 | 类别 | 数量 | 字段 |
 |------|------|------|
 | 元数据 | 2 | timestamp, duration_s |
-| 声级 | 6 | LAeq, LCeq, LZeq, LAFmax, LZpeak, LCpeak |
+| 声级 | 7 | LAeq, LCeq, LZeq, LAFmax, LZpeak, LCpeak, **LAPeak** [v3.3.0] |
 | 剂量增量 | 4 | dose_frac_niosh, dose_frac_osha_pel, dose_frac_osha_hca, dose_frac_eu_iso |
-| 质量控制 | 3 | overload_flag, underrange_flag, wearing_state |
+| 质量控制 | 3 | overload_flag (LZPeak>140 dB, IEC 61672-1 Class 1), underrange_flag, wearing_state |
 | 峰度 | 4 | kurtosis_total, kurtosis_a_weighted, kurtosis_c_weighted, beta_kurtosis |
 | 原始矩统计量 | 5 | n_samples, sum_x, sum_x2, sum_x3, sum_x4 |
 | 1/3倍频程SPL | 9 | freq_63hz_spl ~ freq_16khz_spl |
 | 1/3倍频程矩S1-S4 | 45 | 每个频段(n,s1,s2,s3,s4) × 9个频段 |
-| **合计** | **81** | |
+| **合计** | **82** | 81 个有效字段 + 1 LAPeak 新增 |
 
 ## 标准参数
 
@@ -345,6 +345,16 @@ noise_info_toolkit_gcc/
 
 ## 变更记录
 
+### v3.3.0 LZeq deprecate (2026-07-06)
+
+- **LZeq>90 单帧触发阈值默认 INFINITY（禁用）**：`leq_threshold_db` 默认值从 90.0f 改为 INFINITY
+- **接口三单触发推荐**：仅 LZpeak ≥ 140 dB → OVERLOAD（IMULSE_SUSPECT 不再由 LZeq 触发）
+- **LOGIC 代码保留**：`src/event_detector.cpp` 中 LZeq 触发 if-block 以 `/* */` 注释块保留，未来可恢复
+- **ABI 兼容**：`leq_threshold_db` 字段保留，`EventDetectorConfig` 结构体大小不变
+- **恢复方法**：① 将 `include/event_detector.hpp` 中 `leq_threshold_db{INFINITY}` 改回 `leq_threshold_db{90.0f}`；② 取消 `src/event_detector.cpp` 中 LZeq 触发块的注释
+- **测试更新**：IMPULSE_SUSPECT 相关 7 个测试替换为 3 个新测试（验证禁用行为、INFINITY 默认值、OVERLOAD 仍工作）
+- **示例更新**：`examples/main.cpp` 中 leq_threshold/debounce/cooldown 注释标注为 "v3.3.0: no effect"
+
 ### v3.3.0 (2026-06-18) — Matched-z A/C 加权，IEC 61672-1 Class 1 实验级精度
 
 **目标**：将 A/C 加权精度从 Class 2（±1.5 dB）提升至 Class 1（±0.7 dB），适用于实验室级精密测量和听力防护标准验证。
@@ -371,6 +381,43 @@ noise_info_toolkit_gcc/
 ⚠️ **ABI break**：`BiquadChain<N>` 模板参数变化（A: 3→4，C: 2→3），v3.2.1 固件镜像不可复用，**需重新烧录**。系数选择在编译期完成，零运行时开销。
 
 **嵌入式使用**：在 `noise_processor.cpp` 构造函数中切换 `#include` header 即可（系数均为 constexpr，零运行时开销）。
+
+### v3.3.0 fix — LAPeak / LCPeak 补齐（接口一、二）
+
+**Bug**：接口一 `process_segment()` 返回的 `SecondMetrics` 与接口二 `aggregate_metrics()` 返回的 `MinuteMetrics` 遗漏了 A/C 加权 peak level（LAPeak / 接口二 LCPeak）。
+
+**实际现状（修复前）**：
+- 接口一声级 6 个：`LAeq, LCeq, LZeq, LAFmax, LZPeak, LCPeak` — 缺 `LAPeak`
+- 接口二 peak 2 个：`LAFmax, LZPeak` — 缺 `LAPeak` 与 `LCPeak`
+
+**根因**：`process_segment()` 的 main loop 只 track 了 `peak_z` 与 `peak_c` 两个 peak；`aggregate_metrics()` 只 max 了 `LAFmax` 与 `LZPeak`。**未计算 LAPeak，也未在 MinuteMetrics 暴露 LCPeak**。
+
+**影响**：
+- 听损评估: 仅 `LAeq`（8h 等效连续声级）不足以描述峰值冲击；
+- ISO 1999 / NIOSH 1998 标准推荐使用 `LAPeak` 作为计权峰值 (A-weighted Peak) 与 `LCPeak` 作为 C 加权峰值；
+- 集成商/嵌入式使用者需要自己手算 (`LAPeak = 20·log10(max(a_buf)/ref_pressure)`)。
+
+**修复 (v3.3.0 fix)**：
+1. `SecondMetrics` 新增 `float LAPeak`（位置: 紧跟 `LCPeak` 后），字段计数 81 → 82。
+2. `MinuteMetrics` 新增 `float LCPeak` + `float LAPeak`（peak 字段数 2 → 4），两者按 `max` 聚合。
+3. `process_segment()` 在 main loop 加 `peak_a` 累加器，输出 `m.LAPeak = 20·log10(peak_a/ref_pressure)`。
+4. `aggregate_metrics()` 在循环中 `result.LCPeak = max(...)` 与 `result.LAPeak = max(...)`。
+
+**overload 事件判定说明**（本修复**不修改** overload 阈值，但增加注释）：
+- 接口一/二的 `overload_flag`（即 `SecondMetrics.overload_flag` 和 `MinuteMetrics.overload_count`）以 `LZPeak > 140 dB` (`OVERLOAD_THRESHOLD`) 作为唯一判定依据。
+- 这与 `EventDetector`（接口三）一致：`EventCheckResult::OVERLOAD = LZpeak >= peak_threshold_db (默认 140 dB)`。
+- **`LZeq >= 90 dB` 不是 overload**，而是 `IMPULSE_SUSPECT` 的触发条件（需 `debounce_frames` 连续帧确认），由接口三内部状态维护，不暴露在接口一/二的输出中（避免重复判定逻辑）。
+- 如使用者需要 `IMPULSE_SUSPECT` 标识，请调用接口三 (`EventDetector::check_segment()`) 而非接口一/二。
+
+**测试**：
+- 现有 `tests/test_noise_processor.cpp` 12 个测试不依赖 LAPeak/LCPeak，通过。
+- 现有 `tests/test_event_detector.cpp` 14 个测试不受影响。
+- `tests/test_end_to_end.cpp`：合成 1kHz 94dB 纯音 → LAPeak 应 = 94.00 dB（与 LAeq 相等），LCPeak = 94.00 dB。
+
+**ABI 兼容**：
+- 仅**新增字段**（末位追加，C++ POD 兼容布局），下游若按字段名访问则**向后兼容**。
+- 若下游按 `sizeof(SecondMetrics)` 做内存布局（如 C 序列化、跨语言 FFI）会受影响，需重新计算偏移。
+- 嵌入式工程师（nRF54L15）若需复用固件镜像请告知，固件版本同步升 v3.3.1。
 
 ### v3.2.1 (2026-06-18) — A/C 加权预存表归一化 bug 修复
 

@@ -1,6 +1,10 @@
 /**
  * @file test_event_detector.cpp
- * @brief Unit tests for EventDetector
+ * @brief Unit tests for EventDetector — v3.3.0 LZeq deprecate edition
+ *
+ * [v3.3.0] IMPULSE_SUSPECT trigger disabled by default (leq_threshold_db = INFINITY).
+ * Only OVERLOAD (LZpeak >= 140 dB) is active as the single-trigger interface.
+ * Legacy Impulse Suspect tests removed; replacement tests verify disabled behavior.
  */
 
 #include <iostream>
@@ -9,6 +13,7 @@
 #include <vector>
 #include <array>
 #include <cstdlib>
+#include <limits>
 #include "event_detector.hpp"
 #include "math_constants.hpp"
 
@@ -44,6 +49,10 @@ std::vector<float> generate_impulse(float amplitude, int n_samples) {
 float spl_to_pa(float spl_db) {
     return 20e-6f * std::pow(10.0f, spl_db / 20.0f);
 }
+
+//==============================================================================
+// KEPT TESTS (unrelated to IMPULSE_SUSPECT)
+//==============================================================================
 
 void test_normal_signal() {
     std::cout << "Test 1: Normal signal (LZeq ~ 70dB)... ";
@@ -91,95 +100,8 @@ void test_overload_signal() {
     std::cout << "PASSED (result=OVERLOAD)\n";
 }
 
-void test_impulse_signal() {
-    std::cout << "Test 3: Impulse signal (LZeq >= 90dB)... ";
-
-    EventDetectorConfig config;
-    config.leq_threshold_db = 90.0f;
-    config.peak_threshold_db = 130.0f;
-    config.debounce_frames = 3; // Need 3 consecutive frames
-    config.cooldown_frames = 5;
-
-    EventDetector detector(config);
-
-    // Generate signal with LZeq >= 90 dB
-    float rms_pa = spl_to_pa(95.0f);
-    float amplitude = rms_pa * std::sqrt(2.0f);
-
-    // Feed 3 consecutive frames above threshold; 3rd frame triggers
-    for (int i = 0; i < 3; ++i) {
-        auto data = generate_sine(1000.0f, amplitude, 48000, 480);
-        auto result = detector.check_segment(data.data(), data.data() + data.size());
-        if (i < 2) {
-            assert(result == EventCheckResult::NORMAL);
-        } else {
-            assert(result == EventCheckResult::IMPULSE_SUSPECT);
-        }
-    }
-
-    std::cout << "PASSED (result=IMPULSE_SUSPECT after 3 frames)\n";
-}
-
-void test_single_frame_noise() {
-    std::cout << "Test 4: Single frame above threshold (debounce)... ";
-
-    EventDetectorConfig config;
-    config.leq_threshold_db = 90.0f;
-    config.peak_threshold_db = 130.0f;
-    config.debounce_frames = 3; // Need 3 consecutive frames
-    config.cooldown_frames = 5;
-
-    EventDetector detector(config);
-
-    // Only 1 frame above threshold
-    float rms_pa = spl_to_pa(95.0f);
-    float amplitude = rms_pa * std::sqrt(2.0f);
-
-    auto data = generate_sine(1000.0f, amplitude, 48000, 480);
-    auto result = detector.check_segment(data.data(), data.data() + data.size());
-
-    // Should not trigger (only 1 frame, debounce requires 3)
-    assert(result == EventCheckResult::NORMAL);
-
-    std::cout << "PASSED (single frame does not trigger)\n";
-}
-
-void test_cooldown_period() {
-    std::cout << "Test 5: Cooldown period after trigger... ";
-
-    EventDetectorConfig config;
-    config.leq_threshold_db = 90.0f;
-    config.peak_threshold_db = 130.0f;
-    config.debounce_frames = 1; // Immediate trigger
-    config.cooldown_frames = 5;
-
-    EventDetector detector(config);
-
-    // Trigger first frame
-    float rms_pa = spl_to_pa(95.0f);
-    float amplitude = rms_pa * std::sqrt(2.0f);
-
-    auto data = generate_sine(1000.0f, amplitude, 48000, 480);
-    auto result = detector.check_segment(data.data(), data.data() + data.size());
-    assert(result == EventCheckResult::IMPULSE_SUSPECT);
-
-    // Next 5 frames should return NORMAL (cooldown)
-    for (int i = 0; i < 5; ++i) {
-        auto data2 = generate_sine(1000.0f, amplitude, 48000, 480);
-        auto result2 = detector.check_segment(data2.data(), data2.data() + data2.size());
-        assert(result2 == EventCheckResult::NORMAL);
-    }
-
-    // After cooldown, can trigger again
-    auto data3 = generate_sine(1000.0f, amplitude, 48000, 480);
-    auto result3 = detector.check_segment(data3.data(), data3.data() + data3.size());
-    assert(result3 == EventCheckResult::IMPULSE_SUSPECT);
-
-    std::cout << "PASSED (cooldown prevents immediate re-trigger)\n";
-}
-
 void test_underrange_signal() {
-    std::cout << "Test 6: Underrange signal (LZeq < 30dB)... ";
+    std::cout << "Test 3: Underrange signal (LZeq < 30dB)... ";
 
     EventDetectorConfig config;
     config.leq_threshold_db = 90.0f;
@@ -203,7 +125,7 @@ void test_underrange_signal() {
 }
 
 void test_reset() {
-    std::cout << "Test 7: Reset detector state... ";
+    std::cout << "Test 4: Reset detector state... ";
 
     EventDetectorConfig config;
     config.leq_threshold_db = 90.0f;
@@ -213,54 +135,21 @@ void test_reset() {
 
     EventDetector detector(config);
 
-    // Trigger an event
-    float rms_pa = spl_to_pa(95.0f);
-    float amplitude = rms_pa * std::sqrt(2.0f);
-
-    for (int i = 0; i < 3; ++i) {
-        auto data = generate_sine(1000.0f, amplitude, 48000, 480);
-        detector.check_segment(data.data(), data.data() + data.size());
-    }
+    // Trigger an event (OVERLOAD should work)
+    float peak_pa = 283.0f;
+    auto overload_data = generate_sine(1000.0f, peak_pa, 48000, 480);
+    detector.check_segment(overload_data.data(), overload_data.data() + overload_data.size());
+    assert(detector.was_impulse_detected() == true);
 
     // Reset
     detector.reset();
-
-    // After reset, first frame should not trigger immediately (debounce)
-    auto data = generate_sine(1000.0f, amplitude, 48000, 480);
-    auto result = detector.check_segment(data.data(), data.data() + data.size());
-    assert(result == EventCheckResult::NORMAL);
-
-    std::cout << "PASSED (reset clears counters)\n";
-}
-
-void test_impulse_flag() {
-    std::cout << "Test 8: was_impulse_detected() and clear_impulse_flag()... ";
-
-    EventDetectorConfig config;
-    config.leq_threshold_db = 90.0f;
-    config.peak_threshold_db = 130.0f;
-    config.debounce_frames = 1; // Immediate trigger
-    config.cooldown_frames = 5;
-
-    EventDetector detector(config);
-
-    float rms_pa = spl_to_pa(95.0f);
-    float amplitude = rms_pa * std::sqrt(2.0f);
-
-    // Trigger
-    auto data = generate_sine(1000.0f, amplitude, 48000, 480);
-    detector.check_segment(data.data(), data.data() + data.size());
-
-    assert(detector.was_impulse_detected() == true);
-
-    detector.clear_impulse_flag();
     assert(detector.was_impulse_detected() == false);
 
-    std::cout << "PASSED (impulse flag works correctly)\n";
+    std::cout << "PASSED (reset clears flags & counters)\n";
 }
 
 void test_config_access() {
-    std::cout << "Test 9: Config access... ";
+    std::cout << "Test 5: Config access... ";
 
     EventDetectorConfig config;
     config.leq_threshold_db = 95.0f;
@@ -280,7 +169,7 @@ void test_config_access() {
 }
 
 void test_different_sample_rate() {
-    std::cout << "Test 10: Different sample rate (16000 Hz)... ";
+    std::cout << "Test 6: Different sample rate (16000 Hz)... ";
 
     EventDetectorConfig config;
     config.leq_threshold_db = 90.0f;
@@ -303,7 +192,7 @@ void test_different_sample_rate() {
 }
 
 void test_empty_buffer() {
-    std::cout << "Test 11: Empty buffer... ";
+    std::cout << "Test 7: Empty buffer... ";
 
     EventDetectorConfig config;
     EventDetector detector(config);
@@ -317,123 +206,100 @@ void test_empty_buffer() {
     std::cout << "PASSED (empty buffer handled)\n";
 }
 
-void test_back_to_back_triggers() {
-    std::cout << "Test 12: Back-to-back triggers with longer cooldown... ";
+//==============================================================================
+// [v3.3.0] REPLACEMENT TESTS — IMPULSE_SUSPECT disabled
+//==============================================================================
 
-    EventDetectorConfig config;
-    config.leq_threshold_db = 90.0f;
-    config.peak_threshold_db = 130.0f;
-    config.debounce_frames = 1;
-    config.cooldown_frames = 10;
+void test_impulse_suspect_disabled() {
+    std::cout << "Test 8: IMPULSE_SUSPECT disabled (leq_threshold_db=INFINITY)... ";
 
-    EventDetector detector(config);
+    // Default config: leq_threshold_db = INFINITY (no LZeq trigger)
+    EventDetector detector;
 
-    float rms_pa = spl_to_pa(95.0f);
+    // Generate loud signal: ~100 dB LZeq
+    float rms_pa = spl_to_pa(100.0f);
     float amplitude = rms_pa * std::sqrt(2.0f);
 
-    // Trigger first event
-    auto data1 = generate_sine(1000.0f, amplitude, 48000, 480);
-    auto result1 = detector.check_segment(data1.data(), data1.data() + data1.size());
-    assert(result1 == EventCheckResult::IMPULSE_SUSPECT);
-
-    // Feed quiet signal during cooldown
-    for (int i = 0; i < 10; ++i) {
-        auto quiet = generate_sine(1000.0f, 0.001f, 48000, 480);
-        auto result = detector.check_segment(quiet.data(), quiet.data() + quiet.size());
+    // Feed 5 consecutive frames at high level
+    for (int i = 0; i < 5; ++i) {
+        auto data = generate_sine(1000.0f, amplitude, 48000, 480);
+        auto result = detector.check_segment(data.data(), data.data() + data.size());
+        // Must never return IMPULSE_SUSPECT (trigger is disabled)
+        assert(result != EventCheckResult::IMPULSE_SUSPECT);
+        // Should return NORMAL (not OVERLOAD either, since peak < 140 dB)
         assert(result == EventCheckResult::NORMAL);
     }
 
-    // After cooldown, can trigger again
-    auto data2 = generate_sine(1000.0f, amplitude, 48000, 480);
-    auto result2 = detector.check_segment(data2.data(), data2.data() + data2.size());
-    assert(result2 == EventCheckResult::IMPULSE_SUSPECT);
+    // was_impulse_detected should be false (no trigger fired)
+    assert(detector.was_impulse_detected() == false);
 
-    std::cout << "PASSED (back-to-back triggers with cooldown)\n";
+    std::cout << "PASSED (5 frames @ 100dB yield NORMAL, no IMPULSE_SUSPECT)\n";
 }
 
-void test_overload_during_cooldown() {
-    std::cout << "Test 13: Overload during cooldown is not suppressed... ";
+void test_leq_threshold_default_infinity() {
+    std::cout << "Test 9: leq_threshold_db defaults to INFINITY... ";
 
     EventDetectorConfig config;
-    config.leq_threshold_db = 90.0f;
-    config.peak_threshold_db = 130.0f;
-    config.debounce_frames = 1;
-    config.cooldown_frames = 5;
+    // Default should be INFINITY
+    assert(std::isinf(config.leq_threshold_db));
+    assert(config.leq_threshold_db > 0.0f);  // positive infinity
 
+    // Explicit INFINITY also works
+    config.leq_threshold_db = 90.0f;
+    assert(config.leq_threshold_db == 90.0f);
+    config.leq_threshold_db = INFINITY;
+    assert(std::isinf(config.leq_threshold_db));
+
+    std::cout << "PASSED (default is INFINITY, can toggle to 90.0f and back)\n";
+}
+
+void test_overload_still_works_with_infinity_leq() {
+    std::cout << "Test 10: OVERLOAD still fires despite INFINITY leq_threshold... ";
+
+    // Default config: leq_threshold_db = INFINITY, peak_threshold_db = 140
+    EventDetectorConfig config;
+    // peak_threshold_db defaults to OVERLOAD_THRESHOLD which is 140.0f
     EventDetector detector(config);
 
-    float rms_pa = spl_to_pa(95.0f);
-    float amplitude = rms_pa * std::sqrt(2.0f);
-    auto data = generate_sine(1000.0f, amplitude, 48000, 480);
-
-    assert(detector.check_segment(data.data(), data.data() + data.size()) ==
-           EventCheckResult::IMPULSE_SUSPECT);
-
-    // Level trigger suppressed during cooldown
-    assert(detector.check_segment(data.data(), data.data() + data.size()) ==
-           EventCheckResult::NORMAL);
-
-    // Peak overload must still fire
+    // OVERLOAD: peak ~283 Pa (~143 dB LZpeak) — must fire even with INFINITY leq
     float peak_pa = 283.0f;
-    auto overload = generate_sine(1000.0f, peak_pa, 48000, 480);
-    assert(detector.check_segment(overload.data(), overload.data() + overload.size()) ==
-           EventCheckResult::OVERLOAD);
+    auto data = generate_sine(1000.0f, peak_pa, 48000, 480);
+    auto result = detector.check_segment(data.data(), data.data() + data.size());
 
-    std::cout << "PASSED\n";
-}
+    assert(result == EventCheckResult::OVERLOAD);
+    assert(detector.was_impulse_detected() == true);
 
-void test_impulse_flag_persists() {
-    std::cout << "Test 14: was_impulse_detected persists until cleared... ";
-
-    EventDetectorConfig config;
-    config.leq_threshold_db = 90.0f;
-    config.peak_threshold_db = 130.0f;
-    config.debounce_frames = 1;
-    config.cooldown_frames = 3;
-
-    EventDetector detector(config);
-
-    float rms_pa = spl_to_pa(95.0f);
-    float amplitude = rms_pa * std::sqrt(2.0f);
-    auto data = generate_sine(1000.0f, amplitude, 48000, 480);
-
-    detector.check_segment(data.data(), data.data() + data.size());
-    assert(detector.was_impulse_detected());
-
-    for (int i = 0; i < 3; ++i) {
-        detector.check_segment(data.data(), data.data() + data.size());
-        assert(detector.was_impulse_detected());
-    }
-
+    // Clear and verify
     detector.clear_impulse_flag();
-    assert(!detector.was_impulse_detected());
+    assert(detector.was_impulse_detected() == false);
 
-    std::cout << "PASSED\n";
+    std::cout << "PASSED (OVERLOAD still works with INFINITY leq_threshold)\n";
 }
+
+//==============================================================================
+// Main
+//==============================================================================
 
 int main() {
     std::cout << "========================================\n";
-    std::cout << "  EventDetector Unit Tests\n";
+    std::cout << "  EventDetector Unit Tests  [v3.3.0 LZeq deprecate]\n";
     std::cout << "========================================\n\n";
 
     try {
         test_normal_signal();
         test_overload_signal();
-        test_impulse_signal();
-        test_single_frame_noise();
-        test_cooldown_period();
         test_underrange_signal();
         test_reset();
-        test_impulse_flag();
         test_config_access();
         test_different_sample_rate();
         test_empty_buffer();
-        test_back_to_back_triggers();
-        test_overload_during_cooldown();
-        test_impulse_flag_persists();
+
+        test_impulse_suspect_disabled();
+        test_leq_threshold_default_infinity();
+        test_overload_still_works_with_infinity_leq();
 
         std::cout << "\n========================================\n";
-        std::cout << "  ALL TESTS PASSED\n";
+        std::cout << "  ALL 10 TESTS PASSED\n";
         std::cout << "========================================\n";
         return 0;
     } catch (const std::exception& e) {

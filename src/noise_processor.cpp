@@ -177,7 +177,7 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
     float sum_a1 = 0.0f, sum_a2 = 0.0f, sum_a3 = 0.0f, sum_a4 = 0.0f;
     float sum_c1 = 0.0f, sum_c2 = 0.0f, sum_c3 = 0.0f, sum_c4 = 0.0f;
     float sum_a_sq = 0.0f, sum_c_sq = 0.0f, sum_z_sq = 0.0f;
-    float peak_z = 0.0f, peak_c = 0.0f;
+    float peak_z = 0.0f, peak_c = 0.0f, peak_a = 0.0f;   // v3.3.0: track A-weighted peak
 
     for (size_t i = 0; i < n; ++i) {
         float z = buffer_start[i];
@@ -210,11 +210,13 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
         sum_c_sq += c2;
         sum_z_sq += z2;
 
-        // Peak tracking
+        // Peak tracking (v3.3.0: +peak_a for A-weighted peak level)
         float abs_z = std::abs(z);
         float abs_c = std::abs(c);
+        float abs_a = std::abs(a);
         if (abs_z > peak_z) peak_z = abs_z;
         if (abs_c > peak_c) peak_c = abs_c;
+        if (abs_a > peak_a) peak_a = abs_a;
     }
 
     // Store raw moments
@@ -244,9 +246,10 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
     m.LCeq = calc_leq_from_sum_sq(sum_c_sq, n);
     m.LZeq = calc_leq_from_sum_sq(sum_z_sq, n);
 
-    // Peak calculations
-    m.LZPeak = (peak_z > 0) ? (20.0f * std::log10(peak_z / reference_pressure_)) : -INFINITY;
-    m.LCPeak = (peak_c > 0) ? (20.0f * std::log10(peak_c / reference_pressure_)) : -INFINITY;
+    // Peak calculations (v3.3.0: +LAPeak for A-weighted peak level)
+    m.LZPeak  = (peak_z > 0) ? (20.0f * std::log10(peak_z / reference_pressure_)) : -INFINITY;
+    m.LCPeak  = (peak_c > 0) ? (20.0f * std::log10(peak_c / reference_pressure_)) : -INFINITY;
+    m.LAPeak  = (peak_a > 0) ? (20.0f * std::log10(peak_a / reference_pressure_)) : -INFINITY;
 
     // LAFmax approximation (Leq + 3 dB as in original)
     m.LAFmax = m.LAeq + 3.0f;
@@ -264,7 +267,7 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
         m.dose_frac_eu_iso   = DoseCalculator::calculate_dose_increment(m.LAeq, duration_s, prof_e) / 100.0f;
     }
 
-    // QC flags
+    // QC flags (per IEC 61672-1 Class 1: OVERLOAD = LZPeak > 140 dB)
     m.overload_flag = (m.LZPeak > OVERLOAD_THRESHOLD);
     m.underrange_flag = (m.LAeq < UNDERRANGE_THRESHOLD);
     m.wearing_state = (m.LAeq > 40.0f);
@@ -374,6 +377,8 @@ MinuteMetrics NoiseProcessor::aggregate_metrics(const SecondMetrics* second_metr
     float sum_power_laeq = 0.0f, sum_power_lceq = 0.0f, sum_power_lzeq = 0.0f;
     result.LAFmax = -INFINITY;
     result.LZPeak = -INFINITY;
+    result.LCPeak = -INFINITY;       // v3.3.0: +LCPeak max aggregation
+    result.LAPeak = -INFINITY;       // v3.3.0: +LAPeak max aggregation
 
     int64_t total_n = 0;
     float total_s1 = 0.0f, total_s2 = 0.0f, total_s3 = 0.0f, total_s4 = 0.0f;
@@ -393,6 +398,8 @@ MinuteMetrics NoiseProcessor::aggregate_metrics(const SecondMetrics* second_metr
 
         result.LAFmax = std::max(result.LAFmax, m.LAFmax);
         result.LZPeak = std::max(result.LZPeak, m.LZPeak);
+        result.LCPeak = std::max(result.LCPeak, m.LCPeak);   // v3.3.0
+        result.LAPeak = std::max(result.LAPeak, m.LAPeak);   // v3.3.0
 
         result.dose_frac_niosh    += m.dose_frac_niosh;
         result.dose_frac_osha_pel += m.dose_frac_osha_pel;

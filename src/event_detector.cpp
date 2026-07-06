@@ -48,8 +48,12 @@ EventCheckResult EventDetector::check_segment(const float* buffer_start,
         return EventCheckResult::NORMAL;
     }
 
+    /*
+     * [v3.3.0] LZeq>90 trigger LOGIC DEPRECATED
+     * Interface 3 single-trigger recommendation: ONLY LZpeak >= 140 dB → OVERLOAD
+     * To restore: uncomment this block AND change leq_threshold_db default back to 90.0f
+     *
     const uint8_t required_frames = required_debounce_frames(config_.debounce_frames);
-
     if (lzeq >= config_.leq_threshold_db) {
         if (consecutive_anomaly_count_ < UINT8_MAX) {
             ++consecutive_anomaly_count_;
@@ -63,6 +67,9 @@ EventCheckResult EventDetector::check_segment(const float* buffer_start,
     } else {
         consecutive_anomaly_count_ = 0;
     }
+    */
+    // [v3.3.0] LZeq-based IMPULSE_SUSPECT disabled
+    // consecutive_anomaly_count_ preserved ABI-compatible but never incremented
 
     if (lzeq < config_.underrange_threshold_db) {
         return EventCheckResult::UNDERRANGE;
