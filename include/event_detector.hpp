@@ -51,7 +51,7 @@ enum class EventCheckResult : uint8_t {
  */
 struct EventDetectorConfig {
     //=== 触发阈值（触发灵敏度控制）===
-    float leq_threshold_db{90.0f};                          ///< LZeq 触发阈值 (dB)
+    float leq_threshold_db{INFINITY};  // [v3.3.0] LZeq trigger disabled; restore to 90.0f to re-enable
     float peak_threshold_db{OVERLOAD_THRESHOLD};            ///< LZpeak 触发阈值 (dB)，默认 140
     float underrange_threshold_db{UNDERRANGE_THRESHOLD};    ///< LZeq 欠量程阈值 (dB)，默认 30
 
@@ -74,12 +74,17 @@ struct EventDetectorConfig {
  *
  * Detects anomaly events in audio segments:
  * - Peak trigger: LZpeak >= threshold → OVERLOAD（不受 cooldown 抑制）
- * - Level trigger: LZeq >= threshold → IMPULSE_SUSPECT（debounce + cooldown）
+ * - Level trigger: [v3.3.0 disabled] LZeq >= threshold → IMPULSE_SUSPECT（debounce + cooldown）
  *
  * Design principles:
  * - Zero heap allocation (all state in class members)
  * - Independent from NoiseProcessor (方案 A: 独立接口)
  * - All parameters configurable via EventDetectorConfig
+ *
+ * [v3.3.0] LZeq-based IMPULSE_SUSPECT trigger DISABLED by default
+ * (leq_threshold_db defaults to INFINITY). OVERLOAD via LZpeak >= 140 dB
+ * remains the recommended single-trigger interface. See src/event_detector.cpp
+ * for the commented-out legacy LZeq trigger logic.
  */
 class EventDetector {
 public:

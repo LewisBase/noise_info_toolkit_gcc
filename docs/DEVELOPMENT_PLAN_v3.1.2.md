@@ -1,5 +1,9 @@
 # v3.1.2 开发计划 — 简化事件检测接口
 
+> **v3.3.0 更新**：LZeq 触发逻辑已弃用（`leq_threshold_db` 默认 INFINITY），
+> IMPULSE_SUSPECT 触发禁用。推荐使用**单触发**模式：仅 LZpeak ≥ 140 dB → OVERLOAD。
+> 详见 `src/event_detector.cpp` 中的注释块。如需恢复，改 `leq_threshold_db` 为 `90.0f` 并取消注释 if-block。
+
 > 日期：2026-05-27
 > 作者：蒙特卡洛
 > 状态：草稿，待审阅
@@ -61,7 +65,7 @@
 | Python 版特性 | 嵌入式简化版 | 说明 |
 |--------------|-------------|------|
 | 125ms 滑动窗口 | **10ms 固定窗口** | 直接复用 `process_segment()` 的 10ms 块 |
-| 三种触发模式 | **双触发模式（峰值+声级）** | 峰值触发（LCpeak ≥ 阈值）返回 OVERLOAD；声级触发（LZeq ≥ 阈值）返回 IMPULSE_SUSPECT |
+| 三种触发模式 | **单触发模式（仅峰值）** [v3.3.0] | 峰值触发（LZpeak ≥ 阈值）返回 OVERLOAD；声级触发 LZeq→IMPULSE_SUSPECT **已弃用**，leq_threshold_db 默认 INFINITY |
 | 0.5s 去抖动 | **帧计数器去抖** | `debounce_frames`（连续 N 帧）+ `cooldown_frames`（冷却 N 帧），均通过配置控制 |
 | 12s 环形缓冲 | **零缓冲** | 不保存音频，只返回检测结果 |
 | 事件音频保存 | **无** | 嵌入式工程师自行处理 |
@@ -103,7 +107,7 @@ enum class EventCheckResult : uint8_t {
 
 struct EventDetectorConfig {
     // 触发阈值
-    float leq_threshold_db{90.0f};      // LZeq 触发阈值 (dB)
+    float leq_threshold_db{INFINITY};  // [v3.3.0] LZeq 触发阈值禁用；如需恢复改回 90.0f
     float peak_threshold_db{130.0f};     // LCpeak 触发阈值 (dB)
     float underrange_threshold_db{30.0f}; // 信号太弱阈值 (dB)
 

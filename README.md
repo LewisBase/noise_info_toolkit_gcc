@@ -345,6 +345,16 @@ noise_info_toolkit_gcc/
 
 ## 变更记录
 
+### v3.3.0 LZeq deprecate (2026-07-06)
+
+- **LZeq>90 单帧触发阈值默认 INFINITY（禁用）**：`leq_threshold_db` 默认值从 90.0f 改为 INFINITY
+- **接口三单触发推荐**：仅 LZpeak ≥ 140 dB → OVERLOAD（IMULSE_SUSPECT 不再由 LZeq 触发）
+- **LOGIC 代码保留**：`src/event_detector.cpp` 中 LZeq 触发 if-block 以 `/* */` 注释块保留，未来可恢复
+- **ABI 兼容**：`leq_threshold_db` 字段保留，`EventDetectorConfig` 结构体大小不变
+- **恢复方法**：① 将 `include/event_detector.hpp` 中 `leq_threshold_db{INFINITY}` 改回 `leq_threshold_db{90.0f}`；② 取消 `src/event_detector.cpp` 中 LZeq 触发块的注释
+- **测试更新**：IMPULSE_SUSPECT 相关 7 个测试替换为 3 个新测试（验证禁用行为、INFINITY 默认值、OVERLOAD 仍工作）
+- **示例更新**：`examples/main.cpp` 中 leq_threshold/debounce/cooldown 注释标注为 "v3.3.0: no effect"
+
 ### v3.3.0 (2026-06-18) — Matched-z A/C 加权，IEC 61672-1 Class 1 实验级精度
 
 **目标**：将 A/C 加权精度从 Class 2（±1.5 dB）提升至 Class 1（±0.7 dB），适用于实验室级精密测量和听力防护标准验证。

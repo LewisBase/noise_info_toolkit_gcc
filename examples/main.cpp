@@ -263,11 +263,14 @@ void test_interface3_event_detector() {
     std::cout << "10 ms blocks @ 48 kHz, Z-weighted Pa input\n\n";
 
     EventDetectorConfig config;
-    config.leq_threshold_db = 90.0f;
+    // [v3.3.0] leq_threshold_db default is INFINITY (disabled);
+    // explicitly set to 90.0f here to demonstrate legacy config — has NO effect
+    // unless the commented-out LZeq trigger block is also restored.
+    config.leq_threshold_db = 90.0f;  // v3.3.0: no effect (threshold INFINITY by default)
     config.peak_threshold_db = OVERLOAD_THRESHOLD;
     config.underrange_threshold_db = UNDERRANGE_THRESHOLD;
-    config.debounce_frames = 3;
-    config.cooldown_frames = 5;
+    config.debounce_frames = 3;       // v3.3.0: no effect on IMPULSE_SUSPECT
+    config.cooldown_frames = 5;       // v3.3.0: only applies after OVERLOAD
 
     EventDetector detector(config);
 
@@ -327,8 +330,10 @@ void test_interface3_with_noise_processor() {
     std::cout << "EventDetector on raw Z(Pa); NoiseProcessor applies A/C weighting internally\n\n";
 
     EventDetectorConfig config;
-    config.debounce_frames = 3;
-    config.cooldown_frames = 5;
+    // [v3.3.0] leq_threshold defaults to INFINITY (disabled);
+    // debounce_frames/cooldown_frames have no effect on IMPULSE_SUSPECT.
+    config.debounce_frames = 3;   // v3.3.0: no effect
+    config.cooldown_frames = 5;   // v3.3.0: only after OVERLOAD
 
     EventDetector detector(config);
     NoiseProcessor processor(kSampleRate);
