@@ -59,11 +59,11 @@ struct FreqBandMoments {
 };
 
 //==============================================================================
-// Per-Second Metrics (82 fields total) — v3.3.0 LAPeak added
+// Per-Second Metrics (79 fields, 308 bytes) — v3.3.0 LAPeak added
 //==============================================================================
 
 /**
- * @brief Single second metrics - 82 indicators (v3.3.0: LAPeak added)
+ * @brief Single second metrics - 79 fields, 308 bytes (v3.3.0: LAPeak added)
  *
  * Field count breakdown:
  *   - 2: timestamp, duration_s
@@ -74,7 +74,13 @@ struct FreqBandMoments {
  *   - 5: n_samples, sum_x/s1, sum_x2/s2, sum_x3/s3, sum_x4/s4
  *   - 9: freq band SPLs (63Hz-16kHz)
  *   - 45: freq band raw moments S1-S4 (9 bands × 5 values)
- *   Total: 2 + 7 + 4 + 3 + 4 + 5 + 9 + 45 = 79 (+ 3 padding bytes); count = 82
+ *   Total: 2 + 7 + 4 + 3 + 4 + 5 + 9 + 45 = 79 fields (+ 1 padding byte @ offset [55]); sizeof = 308 bytes
+ *
+ * Padding note: 1 byte at offset [55] is compiler-inserted for natural 4-byte alignment
+ * between the 3 QC bools (overload/underrange/wearing @ [52..54]) and the float
+ * kurtosis_total @ [56]. Total field bytes = 307 (66 floats×4 + 3 bools×1 + 10 int32×4),
+ * sizeof = 308 (next multiple of 4 above 307). Earlier comment claiming "3 padding bytes"
+ * was incorrect (carried over from v3.2 '3 extra' wording, never re-verified).
  *
  * overload 事件判定 (per IEC 61672-1 Class 1):
  *   - OVERLOAD = LZPeak > 140 dB (OVERLOAD_THRESHOLD constant)
