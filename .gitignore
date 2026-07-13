@@ -33,3 +33,7 @@ venv/
 
 # OS
 .DS_Store
+
+# syncnas 工具配置（本地专属，不入库）
+.syncnasrc
+.syncignore
