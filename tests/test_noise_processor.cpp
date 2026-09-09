@@ -112,10 +112,10 @@ void test_frequency_bands() {
     assert(m.LAeq > 85.0f && m.LAeq < 100.0f);
     assert(!std::isnan(m.LAeq));
 
-    // 1kHz band: should produce non-trivial output (sine energy is at 1kHz)
-    // Use a generous lower bound to accommodate the un-normalized filter
-    // (1kHz band peak gain is ~ -29 dB relative to ideal 1.0, see AGENTS.md)
-    assert(m.freq_1khz_spl > 30.0f);  // Far above noise floor, well below 94 dB
+    // 1kHz band: v3.3.1 scipy regen of b/a + correction → should match 94 dB ±5 dB
+    // (v3.3.0 had this at ~170 dB due to peak_gain_correction over-compensating
+    //  the simplified-formula biquad's actual -21 dB attenuation vs assumed -106 dB)
+    assert(m.freq_1khz_spl > 85.0f && m.freq_1khz_spl < 100.0f);
     assert(!std::isnan(m.freq_1khz_spl));
     assert(m.freq_1khz_n > 0);
     assert(m.freq_1khz_s1 != 0.0f || m.freq_1khz_s2 != 0.0f);
@@ -128,6 +128,14 @@ void test_frequency_bands() {
     };
     for (int i = 0; i < 9; ++i) {
         assert(!std::isnan(band_spls[i]));
+    }
+    // v3.3.1: only 1kHz band should carry the 94 dB signal energy; all other
+    // bands are filtered out by the bandpass and should be << 94 dB.
+    // (2nd-order Butterworth bandpass has limited stop-band rejection; adjacent
+    // bands are typically ~16 dB below pass-band peak; non-adjacent ≥ 25 dB.)
+    for (int i = 0; i < 9; ++i) {
+        if (i == 4) continue;  // 1kHz band itself
+        assert(band_spls[i] < band_spls[4] - 15.0f);
     }
 
     std::cout << "PASSED (LAeq=" << m.LAeq
