@@ -1,6 +1,6 @@
 # noise_info_toolkit_gcc
 
-C++ 实现的轻量级噪声信息计算工具包（**v3.3.0** — Matched-z A/C 加权，Class 1 实验级精度），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
+C++ 实现的轻量级噪声信息计算工具包（**v3.3.1** — 1/3 倍频程 scipy 重生成，IEEE Class 2 工业级精度），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
 
 ## 设计目标
 
@@ -307,9 +307,10 @@ noise_info_toolkit_gcc/
 │   ├── iir_filter.cpp                # IIR 滤波器实现（含 process_sample）
 │   └── event_detector.cpp            # 事件检测实现
 ├── tools/
-│   ├── generate_bandpass_coeffs.cpp   # bandpass 系数生成工具
+│   ├── generate_bandpass_coeffs.cpp   # bandpass 系数生成工具（v3.3.0 旧版，已弃用）
+│   ├── regen_bandpass_coefficients.py    # v3.3.1 scipy 重生成 1/3 oct 带通系数 🆕
 │   ├── regen_weighting_coefficients.py    # v3.2.1 bilinear 7 采样率系数重生成脚本
-│   └── regen_weighting_matched_z.py       # v3.3.0 matched-z 系数设计脚本 🆕
+│   └── regen_weighting_matched_z.py       # v3.3.0 matched-z 系数设计脚本
 ├── tests/
 │   ├── test_noise_processor.cpp       # 噪声指标单元测试（12 个测试）
 │   ├── test_event_detector.cpp       # 事件检测单元测试（14 个测试）
@@ -344,6 +345,42 @@ noise_info_toolkit_gcc/
 待定 / 请参考原 Python 项目许可证
 
 ## 变更记录
+
+### v3.3.1 (2026-09-09) — 1/3 倍频程 b/a 系数 scipy 重生成
+
+**Bug 修复**：v3.3.0 的 1/3 倍频程带通滤波器 b/a 系数用 `tools/generate_bandpass_coeffs.cpp` 的 6 行简化公式手算，**未做 gain normalization**——`peak_gain_correction` 数值跟 b/a 自洽，但跟实际 `BiquadFilter::process()` TDForm II 跑出来的真实响应差 ~$10^4$ 倍。
+
+**现象**：
+- 1 kHz 正弦 94 dB SPL 输入 → `freq_1khz_spl = 170.66 dB`（虚高 +76.66 dB）
+- noise_meter_validation 报告 4 个频带自洽诊断全数爆雷（+68.78、+73.10、+78.26、+20~72 dB）
+- `tests/test_noise_processor.cpp::test_frequency_bands` 断言只 `> 30 dB`，让 bug 蒙混过关
+
+**修复**：
+- 新增 `tools/regen_bandpass_coefficients.py`（8109 字节）：用 `scipy.signal.butter(1, [fc_low, fc_high], btype='band', fs=48000)` 完整 4 步 pipeline (zpk → lp2bp → bilinear → gain normalization)
+- 覆盖 `include/bandpass_coefficients_48k.hpp`（9 套新系数）
+- 保留旧头文件为 `bandpass_coefficients_48k.hpp.bak-v3.3.0`（1 周后清理）
+- `tests/test_noise_processor.cpp` Test 3 收紧断言：`freq_1khz_spl > 30` → `[85, 100]` dB；新增相邻频段 ≥ 15 dB 衰减断言（2nd-order Butterworth 物理极限）
+
+**实测验证**：
+
+| 项 | v3.3.0 | v3.3.1 |
+|----|--------|--------|
+| `freq_1khz_spl` (94 dB 输入) | 170.66 dB | **93.99 dB** ✓ |
+| `LAeq` (宽带) | 93.9987 dB | 93.9987 dB（不变）|
+| 9 频段 `b0` 数量级 | $10^{-7}$ | $10^{-2}$（↑47000x）|
+| 9 频段 `correction` | $2\text{e}5$ | $1.0$（↓200000x）|
+| biquad 极点 \|p\| | ≈ 1.0（部分越界）| 0.78~1.00（稳定）|
+| ctest 8/8 | PASSED | PASSED |
+
+**API / ABI 兼容**：
+- `BandpassCoeffs` 结构体字段顺序不变
+- `noise_processor.cpp` 调用方代码不变（仅 correction 数值更新）
+- 嵌入式 nRF54L15 可直接 drop-in 替换 v3.3.0
+
+**端到端验证状态**：
+⚠️ THIST100 设备 CSV 是固件层生成，与本仓库 C++ 库独立。当前 `compare.py` 验证继续显示频段 bug 是因为固件没升级——需要重新烧录固件并重录 CSV 才能确认 bug 在设备层也已修复。
+
+详见 `docs/DEVELOPMENT_PLAN_v3.3.1.md` + `docs/THIRD_OCTAVE_BAND_CALCULATION.md`。
 
 ### v3.3.0 LZeq deprecate (2026-07-06)
 
