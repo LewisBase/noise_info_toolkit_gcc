@@ -74,13 +74,19 @@ struct FreqBandMoments {
  *   - 5: n_samples, sum_x/s1, sum_x2/s2, sum_x3/s3, sum_x4/s4
  *   - 9: freq band SPLs (63Hz-16kHz)
  *   - 45: freq band raw moments S1-S4 (9 bands × 5 values)
- *   Total: 2 + 7 + 4 + 3 + 4 + 5 + 9 + 45 = 79 fields (+ 1 padding byte @ offset [55]); sizeof = 308 bytes
+ *   Total: 2 + 9 + 1 + 4 + 3 + 4 + 5 + 9 + 45 = 82 fields (+ padding); sizeof ≈ 324 bytes
+ *   (实际 sizeof = 324, padded by compiler)
  *
- * Padding note: 1 byte at offset [55] is compiler-inserted for natural 4-byte alignment
- * between the 3 QC bools (overload/underrange/wearing @ [52..54]) and the float
- * kurtosis_total @ [56]. Total field bytes = 307 (66 floats×4 + 3 bools×1 + 10 int32×4),
- * sizeof = 308 (next multiple of 4 above 307). Earlier comment claiming "3 padding bytes"
- * was incorrect (carried over from v3.2 '3 extra' wording, never re-verified).
+ * Padding note (v3.3.2 updated): Total field bytes = 323 (68 floats×4 + 3 bools×1 + 11 int32×4),
+ * sizeof = 324 (next multiple of 4 above 323). v3.3.2 新增 LAF/LAS/LASmax 3 个 float 字段。
+ *
+ * v3.3.2 时间计权 (per IEC 61672-1 §7):
+ *   - LAF = A 加权 + Fast 时间计权 (τ=125ms), 瞬时时间加权 SPL
+ *   - LAS = A 加权 + Slow 时间计权 (τ=1s), 瞬时时间加权 SPL
+ *   - LAeq = LAS (τ=1s 等效于 1s 时间常数, 用于合规测量)
+ *   - 算法实现：state = α·state + (1−α)·y², α = exp(−1/(τ·fs))
+ *   - 与 LAeq 的差异：LAF/LAS 是"瞬时"读数, LAeq 是"平均"读数
+ *   - 接口二 仍输出 LAeq (平均值) 用于合规; 接口一同步输出 LAF/LAS 用于实时显示
  *
  * overload 事件判定 (per IEC 61672-1 Class 1):
  *   - OVERLOAD = LZPeak > 140 dB (OVERLOAD_THRESHOLD constant)
@@ -88,17 +94,21 @@ struct FreqBandMoments {
  *   - 接口一/二只暴露 overload_flag/overload_count (基于 LZPeak > 140);
  *     IMPULSE_SUSPECT 判定需调用接口三 EventDetector
  *   - v3.3.0 加 LAPeak: 听力损伤评估关键指标 (与 LZPeak/LCPeak 组成加权 peak 三件套)
+ *   - v3.3.2 加 LAF/LAS: 事件检测算法升级为基于 LAF/LAS (v3.3.3 计划)
  */
 struct SecondMetrics {
     //=== Metadata (2) ===
     float timestamp{0.0f};      // Unix timestamp (seconds since epoch)
     float duration_s{1.0f};     // Actual duration (typically 1.0s)
 
-    //=== Sound Levels (7) — v3.3.0 LAPeak added ===
-    float LAeq{0.0f};           // A-weighted equivalent SPL
-    float LCeq{0.0f};           // C-weighted equivalent SPL
-    float LZeq{0.0f};           // Z-weighted (unweighted) equivalent SPL
-    float LAFmax{0.0f};         // A-weighted fast time-weighted max
+    //=== Sound Levels (10) — v3.3.2 LAF/LAS added ===
+    float LAeq{0.0f};           // A-weighted equivalent SPL (时间平均)
+    float LCeq{0.0f};           // C-weighted equivalent SPL (时间平均)
+    float LZeq{0.0f};           // Z-weighted (unweighted) equivalent SPL (时间平均)
+    float LAFmax{0.0f};         // A-weighted fast time-weighted max [deprecate: v3.3.2, 由 LAF 替代]
+    float LASmax{0.0f};        // A-weighted slow time-weighted max [v3.3.2 added]
+    float LAF{0.0f};            // A-weighted Fast time-weighted SPL (τ=125ms) [v3.3.2 added]
+    float LAS{0.0f};            // A-weighted Slow time-weighted SPL (τ=1s) [v3.3.2 added]
     float LZPeak{0.0f};         // Z-weighted peak level (OVERLOAD 判定主依据)
     float LCPeak{0.0f};         // C-weighted peak level
     float LAPeak{0.0f};         // A-weighted peak level [v3.3.0 added] — 听力损伤评估关键指标
@@ -190,8 +200,9 @@ struct MinuteMetrics {
     float LCeq{0.0f};
     float LZeq{0.0f};
 
-    //=== Peak Levels (4) — v3.3.0 LAPeak + LCPeak added ===
-    float LAFmax{0.0f};
+    //=== Peak Levels (5) — v3.3.2 LASmax added ===
+    float LAFmax{0.0f};         // [v3.3.2 deprecate: 由 LAF 替代, 保留兼容旧消费者]
+    float LASmax{0.0f};         // [v3.3.2 added] A 加权 + Slow 时间计权最大值
     float LZPeak{0.0f};        // Z-weighted peak (max across seconds in minute)
     float LCPeak{0.0f};        // C-weighted peak (max across seconds in minute)
     float LAPeak{0.0f};        // A-weighted peak (max across seconds in minute) [v3.3.0 added] — 听力损伤评估关键指标

@@ -155,16 +155,32 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
     // ---------------------------------------------------------------
     // Phase 2: A/C weighting — streaming in-place (zero heap alloc)
     // ---------------------------------------------------------------
-    // Reset filter chains for each segment to match original behavior
-    // (fresh filter = zero initial state = no carryover from previous segment)
-    a_weight_chain_.reset();
-    c_weight_chain_.reset();
-
+    // v3.3.2: 滤波器状态跨 process_segment() 调用持续保留（不重置）。
+    // 原因：A 计权段 2（20.6 Hz 双极点）建立时间约 7.7 s。若每段（默认 10 ms～1 s）
+    // 都重置，滤波器永远来不及进入稳态，导致 20/25 Hz 低频 LAeq 虚高（PE-04 频段 +25 dB 偏差）。
+    // 商用 Class 1 声级计的滤波器状态也是连续运行的（开机后不重置）。
+    // 若需要重新开始一段独立测量，显式调用 NoiseProcessor::reset()。
+    //
     // v3.2.1: apply 1kHz gain factor AFTER the biquad chain (separate from b/a coefficients)
     for (size_t i = 0; i < n; ++i) {
         a_buf[i] = a_weight_chain_.process(a_buf[i]) * a_weight_gain_;
         c_buf[i] = c_weight_chain_.process(c_buf[i]) * c_weight_gain_;
     }
+
+    // ---------------------------------------------------------------
+    // Phase 2.5 (v3.3.2): Exponential time weighting state update (IEC 61672-1 §7)
+    // Alpha constants for Fast (τ=125ms) and Slow (τ=1s) per IEC 61672-1 §7.4
+    // α = exp(−1 / (τ · fs)), with τ in seconds and fs = sample_rate_
+    // ---------------------------------------------------------------
+    // α = exp(−1 / (τ · fs))，τ 单位秒，fs = sample_rate_
+    const float alpha_F = std::exp(-1.0f / (0.125f * static_cast<float>(sample_rate_)));  // Fast τ=125ms
+    const float alpha_S = std::exp(-1.0f / (1.0f   * static_cast<float>(sample_rate_)));  // Slow τ=1s
+    const float one_minus_alpha_F = 1.0f - alpha_F;
+    const float one_minus_alpha_S = 1.0f - alpha_S;
+
+    // Update exponential time weighting state in the biquad output loop above.
+    // (For efficiency, the actual state update is folded into the main loop below
+    //  to avoid a second pass over the n samples.)
 
     // ---------------------------------------------------------------
     // Phase 3: Compute all metrics in a single pass (zero heap alloc)
@@ -173,6 +189,7 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
     // in the main loop, then compute kurtosis from moments.  This eliminates
     // dependency on the VLA buffers for kurtosis (a_buf/c_buf may be
     // corrupted by stack issues on memory-constrained embedded platforms).
+    // v3.3.2: Also update exponential time weighting state (LAF/LAS) inline.
     float sum_x = 0.0f, sum_x2 = 0.0f, sum_x3 = 0.0f, sum_x4 = 0.0f;
     float sum_a1 = 0.0f, sum_a2 = 0.0f, sum_a3 = 0.0f, sum_a4 = 0.0f;
     float sum_c1 = 0.0f, sum_c2 = 0.0f, sum_c3 = 0.0f, sum_c4 = 0.0f;
@@ -209,6 +226,17 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
         sum_a_sq += a2;
         sum_c_sq += c2;
         sum_z_sq += z2;
+
+        // === v3.3.2: Exponential time weighting state update ===
+        // state = α·state + (1−α)·y²
+        // This gives LAF/LAS readings that are time-weighted SPL (per IEC 61672-1 §7).
+        // The state persists across process_segment() calls, so readings are continuous.
+        laf_sq_z_ = alpha_F * laf_sq_z_ + one_minus_alpha_F * z2;
+        las_sq_z_ = alpha_S * las_sq_z_ + one_minus_alpha_S * z2;
+        laf_sq_a_ = alpha_F * laf_sq_a_ + one_minus_alpha_F * a2;
+        las_sq_a_ = alpha_S * las_sq_a_ + one_minus_alpha_S * a2;
+        laf_sq_c_ = alpha_F * laf_sq_c_ + one_minus_alpha_F * c2;
+        las_sq_c_ = alpha_S * las_sq_c_ + one_minus_alpha_S * c2;
 
         // Peak tracking (v3.3.0: +peak_a for A-weighted peak level)
         float abs_z = std::abs(z);
@@ -251,8 +279,25 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
     m.LCPeak  = (peak_c > 0) ? (20.0f * std::log10(peak_c / reference_pressure_)) : -INFINITY;
     m.LAPeak  = (peak_a > 0) ? (20.0f * std::log10(peak_a / reference_pressure_)) : -INFINITY;
 
-    // LAFmax approximation (Leq + 3 dB as in original)
+    // v3.3.2: LAF/LAS readings from exponential time weighting state
+    // LAF = 10·log10(laf_sq_a_) → A-weighted Fast (τ=125ms) time-weighted SPL
+    // LAS = 10·log10(las_sq_a_) → A-weighted Slow (τ=1s) time-weighted SPL
+    //
+    // 换算常数推导：LAeq = 10·log10(state / p_ref²) = 10·log10(state) − 20·log10(p_ref)
+    // 当 p_ref = 20 μPa 时，−20·log10(20e-6) = +93.9794 dB
+    const float ref_sq_db = -20.0f * std::log10(reference_pressure_);   // ≈ 93.9794 dB
+    auto state_to_db = [ref_sq_db](float state_sq) -> float {
+        if (state_sq <= 0) return -INFINITY;
+        return 10.0f * std::log10(state_sq) + ref_sq_db;
+    };
+
+    m.LAF  = state_to_db(laf_sq_a_);   // Fast time-weighted SPL (τ=125ms)
+    m.LAS  = state_to_db(las_sq_a_);   // Slow time-weighted SPL (τ=1s)
+
+    // LAFmax approximation (Leq + 3 dB as in original) — v3.3.2 保留兼容旧消费者
     m.LAFmax = m.LAeq + 3.0f;
+    // LASmax = LAS (Slow time weighting already acts as a smoothed maximum)
+    m.LASmax = m.LAS;
 
     // Dose calculations
     if (m.LAeq > 0) {
@@ -376,6 +421,7 @@ MinuteMetrics NoiseProcessor::aggregate_metrics(const SecondMetrics* second_metr
 
     float sum_power_laeq = 0.0f, sum_power_lceq = 0.0f, sum_power_lzeq = 0.0f;
     result.LAFmax = -INFINITY;
+    result.LASmax = -INFINITY;       // v3.3.2: +LASmax max aggregation
     result.LZPeak = -INFINITY;
     result.LCPeak = -INFINITY;       // v3.3.0: +LCPeak max aggregation
     result.LAPeak = -INFINITY;       // v3.3.0: +LAPeak max aggregation
@@ -397,6 +443,7 @@ MinuteMetrics NoiseProcessor::aggregate_metrics(const SecondMetrics* second_metr
         sum_power_lzeq += db_to_power(m.LZeq);
 
         result.LAFmax = std::max(result.LAFmax, m.LAFmax);
+        result.LASmax = std::max(result.LASmax, m.LASmax);   // v3.3.2
         result.LZPeak = std::max(result.LZPeak, m.LZPeak);
         result.LCPeak = std::max(result.LCPeak, m.LCPeak);   // v3.3.0
         result.LAPeak = std::max(result.LAPeak, m.LAPeak);   // v3.3.0

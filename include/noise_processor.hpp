@@ -106,6 +106,24 @@ public:
     /** @brief Get configured reference pressure */
     float reference_pressure() const { return reference_pressure_; }
 
+    /**
+     * @brief Reset all persistent state (filters + time weighting)
+     *
+     * v3.3.2: 因为滤波器状态现在跨 process_segment() 调用持续保留（为了低频正确），
+     * 当需要开始一段全新的独立测量时（如设备重新部署、校准后），应显式调用本方法。
+     *
+     * 重置内容：
+     *   - A/C 加权 biquad 状态
+     *   - 9 × 1/3 倍频程带通滤波器状态
+     *   - LAF/LAS 指数时间计权状态
+     */
+    void reset() noexcept {
+        a_weight_chain_.reset();
+        c_weight_chain_.reset();
+        for (auto& bf : band_filters_) bf.reset();
+        reset_time_weighting();
+    }
+
 private:
     int sample_rate_;
     float reference_pressure_;
@@ -121,6 +139,23 @@ private:
     float a_weight_gain_ = 1.0f;
     float c_weight_gain_ = 1.0f;
 
+    // === v3.3.2: Exponential time weighting state (IEC 61672-1 §7) ===
+    // Three weighting chains (A/C/Z) × two time constants (Fast/Slow) = 6 state vars
+    // Memory cost: 6 × 4 bytes = 24 bytes (almost zero RAM overhead)
+    //
+    // Formula: state = α · state + (1−α) · y²
+    //   α_F = exp(−1 / (0.125 · fs))  // Fast time constant τ=125ms
+    //   α_S = exp(−1 / (1.0   · fs))  // Slow time constant τ=1s
+    //
+    // Initialized to 0; first process_segment() builds up from zero (transient period ~τ).
+    // After ~7τ the readings match steady-state within IEC Class 1 tolerance.
+    float laf_sq_a_{0.0f};   // A-weighted Fast time-weighted power state (τ=125ms)
+    float las_sq_a_{0.0f};   // A-weighted Slow time-weighted power state (τ=1s)
+    float laf_sq_c_{0.0f};   // C-weighted Fast time-weighted power state
+    float las_sq_c_{0.0f};   // C-weighted Slow time-weighted power state
+    float laf_sq_z_{0.0f};   // Z-weighted Fast time-weighted power state
+    float las_sq_z_{0.0f};   // Z-weighted Slow time-weighted power state
+
     // 9 × 1/3 octave bandpass filters (persistent)
     BiquadFilter band_filters_[9] = {
         BiquadFilter(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f),
@@ -133,6 +168,11 @@ private:
         BiquadFilter(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f),
         BiquadFilter(1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f)
     };
+
+    /** @brief Reset all time-weighting state (call on power-on or sample-rate change) */
+    void reset_time_weighting() noexcept {
+        laf_sq_a_ = las_sq_a_ = laf_sq_c_ = las_sq_c_ = laf_sq_z_ = las_sq_z_ = 0.0f;
+    }
 };
 
 } // namespace noise_toolkit
