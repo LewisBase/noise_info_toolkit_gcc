@@ -227,12 +227,11 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
         sum_c_sq += c2;
         sum_z_sq += z2;
 
-        // === v3.3.2: Exponential time weighting state update ===
+        // === v3.3.2/v3.3.3: Exponential time weighting state update ===
         // state = α·state + (1−α)·y²
-        // This gives LAF/LAS readings that are time-weighted SPL (per IEC 61672-1 §7).
+        // This gives LAF/LAS/LCF/LCS readings that are time-weighted SPL (IEC 61672-1 §7).
         // The state persists across process_segment() calls, so readings are continuous.
-        laf_sq_z_ = alpha_F * laf_sq_z_ + one_minus_alpha_F * z2;
-        las_sq_z_ = alpha_S * las_sq_z_ + one_minus_alpha_S * z2;
+        // v3.3.3（方案 C）：仅 A/C 保持时间计权，Z 已移除（无加权，实用价值低）。
         laf_sq_a_ = alpha_F * laf_sq_a_ + one_minus_alpha_F * a2;
         las_sq_a_ = alpha_S * las_sq_a_ + one_minus_alpha_S * a2;
         laf_sq_c_ = alpha_F * laf_sq_c_ + one_minus_alpha_F * c2;
@@ -293,11 +292,15 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
 
     m.LAF  = state_to_db(laf_sq_a_);   // Fast time-weighted SPL (τ=125ms)
     m.LAS  = state_to_db(las_sq_a_);   // Slow time-weighted SPL (τ=1s)
+    // v3.3.3（方案 C）：C 计权同步输出 LCF/LCS（C 在低频同样有建立时间问题，且为 LCpeak 配套）
+    m.LCF  = state_to_db(laf_sq_c_);   // C-weighted Fast (τ=125ms)
+    m.LCS  = state_to_db(las_sq_c_);   // C-weighted Slow (τ=1s)
 
     // LAFmax approximation (Leq + 3 dB as in original) — v3.3.2 保留兼容旧消费者
     m.LAFmax = m.LAeq + 3.0f;
-    // LASmax = LAS (Slow time weighting already acts as a smoothed maximum)
+    // LASmax / LCSmax = 各自的 Slow 时间计权值（Slow 已起平滑最大作用）
     m.LASmax = m.LAS;
+    m.LCSmax = m.LCS;
 
     // Dose calculations
     if (m.LAeq > 0) {
@@ -422,6 +425,7 @@ MinuteMetrics NoiseProcessor::aggregate_metrics(const SecondMetrics* second_metr
     float sum_power_laeq = 0.0f, sum_power_lceq = 0.0f, sum_power_lzeq = 0.0f;
     result.LAFmax = -INFINITY;
     result.LASmax = -INFINITY;       // v3.3.2: +LASmax max aggregation
+    result.LCSmax = -INFINITY;       // v3.3.3: +LCSmax max aggregation
     result.LZPeak = -INFINITY;
     result.LCPeak = -INFINITY;       // v3.3.0: +LCPeak max aggregation
     result.LAPeak = -INFINITY;       // v3.3.0: +LAPeak max aggregation
@@ -444,6 +448,7 @@ MinuteMetrics NoiseProcessor::aggregate_metrics(const SecondMetrics* second_metr
 
         result.LAFmax = std::max(result.LAFmax, m.LAFmax);
         result.LASmax = std::max(result.LASmax, m.LASmax);   // v3.3.2
+        result.LCSmax = std::max(result.LCSmax, m.LCSmax);   // v3.3.3
         result.LZPeak = std::max(result.LZPeak, m.LZPeak);
         result.LCPeak = std::max(result.LCPeak, m.LCPeak);   // v3.3.0
         result.LAPeak = std::max(result.LAPeak, m.LAPeak);   // v3.3.0
@@ -455,6 +460,14 @@ MinuteMetrics NoiseProcessor::aggregate_metrics(const SecondMetrics* second_metr
 
         if (m.overload_flag) result.overload_count++;
         if (m.underrange_flag) result.underrange_count++;
+
+        // v3.3.3: 事件分级计数（由 EventDetector::check_metrics() 回写到 m.event_type）
+        switch (m.event_type) {
+            case 1: result.event_minor_count++;    break;  // EventType::MINOR
+            case 2: result.event_moderate_count++; break;  // EventType::MODERATE
+            case 3: result.event_severe_count++;   break;  // EventType::SEVERE
+            default: break;                                  // NONE
+        }
 
         if (m.n_samples > 0) {
             total_s1 += m.sum_x;

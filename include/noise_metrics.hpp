@@ -101,14 +101,17 @@ struct SecondMetrics {
     float timestamp{0.0f};      // Unix timestamp (seconds since epoch)
     float duration_s{1.0f};     // Actual duration (typically 1.0s)
 
-    //=== Sound Levels (10) — v3.3.2 LAF/LAS added ===
+    //=== Sound Levels (13) — v3.3.3 LCF/LCS/LCSmax added ===
     float LAeq{0.0f};           // A-weighted equivalent SPL (时间平均)
     float LCeq{0.0f};           // C-weighted equivalent SPL (时间平均)
     float LZeq{0.0f};           // Z-weighted (unweighted) equivalent SPL (时间平均)
-    float LAFmax{0.0f};         // A-weighted fast time-weighted max [deprecate: v3.3.2, 由 LAF 替代]
-    float LASmax{0.0f};        // A-weighted slow time-weighted max [v3.3.2 added]
+    float LAFmax{0.0f};         // [deprecate: 由 LAF 替代, 保留兼容旧消费者]
+    float LASmax{0.0f};         // A 加权 + Slow 时间计权最大值 [v3.3.2 added]
+    float LCSmax{0.0f};         // C 加权 + Slow 时间计权最大值 [v3.3.3 added]
     float LAF{0.0f};            // A-weighted Fast time-weighted SPL (τ=125ms) [v3.3.2 added]
     float LAS{0.0f};            // A-weighted Slow time-weighted SPL (τ=1s) [v3.3.2 added]
+    float LCF{0.0f};            // C-weighted Fast time-weighted SPL (τ=125ms) [v3.3.3 added]
+    float LCS{0.0f};            // C-weighted Slow time-weighted SPL (τ=1s) [v3.3.3 added]
     float LZPeak{0.0f};         // Z-weighted peak level (OVERLOAD 判定主依据)
     float LCPeak{0.0f};         // C-weighted peak level
     float LAPeak{0.0f};         // A-weighted peak level [v3.3.0 added] — 听力损伤评估关键指标
@@ -123,6 +126,13 @@ struct SecondMetrics {
     bool overload_flag{false};    // LZPeak > 140 dB (OVERLOAD_THRESHOLD); per IEC 61672-1 Class 1 过载判定
     bool underrange_flag{false};  // LAeq < 30 dB (UNDERRANGE_THRESHOLD); 传感器信号太低
     bool wearing_state{true};     // LAeq > 40 dB 表示佩戴中 (粗略检测)
+
+    //=== 事件检测结果 (2) — v3.3.3 新增 ===
+    // 由 EventDetector::check_metrics() 填入（调用方负责回写）
+    //   event_type:     0=NONE, 1=MINOR, 2=MODERATE, 3=SEVERE（对应 EventType 枚举）
+    //   event_severity: 0-100 严重程度评分
+    uint8_t event_type{0};
+    uint8_t event_severity{0};
 
     //=== Kurtosis Metrics (4) ===
     float kurtosis_total{3.0f};      // Z-weighted (raw signal) kurtosis (Pearson, normal=3)
@@ -200,9 +210,10 @@ struct MinuteMetrics {
     float LCeq{0.0f};
     float LZeq{0.0f};
 
-    //=== Peak Levels (5) — v3.3.2 LASmax added ===
-    float LAFmax{0.0f};         // [v3.3.2 deprecate: 由 LAF 替代, 保留兼容旧消费者]
+    //=== Peak Levels (6) — v3.3.3 LCSmax added ===
+    float LAFmax{0.0f};         // [deprecate: 由 LAF 替代, 保留兼容旧消费者]
     float LASmax{0.0f};         // [v3.3.2 added] A 加权 + Slow 时间计权最大值
+    float LCSmax{0.0f};         // [v3.3.3 added] C 加权 + Slow 时间计权最大值
     float LZPeak{0.0f};        // Z-weighted peak (max across seconds in minute)
     float LCPeak{0.0f};        // C-weighted peak (max across seconds in minute)
     float LAPeak{0.0f};        // A-weighted peak (max across seconds in minute) [v3.3.0 added] — 听力损伤评估关键指标
@@ -217,6 +228,11 @@ struct MinuteMetrics {
     int32_t overload_count{0};
     int32_t underrange_count{0};
     int32_t valid_seconds{0};
+
+    //=== 事件统计 (3) — v3.3.3 新增 ===
+    int32_t event_minor_count{0};     ///< MINOR 事件秒钟数
+    int32_t event_moderate_count{0};  ///< MODERATE 事件秒钟数
+    int32_t event_severe_count{0};    ///< SEVERE 事件秒钟数
 
     //=== Kurtosis (3) ===
     float kurtosis_total{3.0f};

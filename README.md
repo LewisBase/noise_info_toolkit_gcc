@@ -1,6 +1,6 @@
 # noise_info_toolkit_gcc
 
-C++ 实现的轻量级噪声信息计算工具包（**v3.3.2** — 指数时间计权（IEC 61672-1 §7）+ LAF/LAS 输出，IEC Class 1 实验级精度），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
+C++ 实现的轻量级噪声信息计算工具包（**v3.3.3** — 基于 LAF/LAS 的多维度事件检测 + 指数时间计权，IEC Class 1 实验级精度），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
 
 ## 设计目标
 
@@ -26,8 +26,9 @@ SecondMetrics m = processor.process_segment(buffer_start, buffer_end, 1.0f);
 
 // m 包含 82 个指标：
 //   - 元数据: timestamp, duration_s
-//   - 声级: LAeq, LCeq, LZeq, LAFmax, LASmax, LAF, LAS, LZpeak, LCpeak, LAPeak
-//           [v3.3.2+LAF/LAS/LASmax 指数时间计权，v3.3.0+LAPeak]
+//   - 声级: LAeq, LCeq, LZeq, LAFmax, LASmax, LCSmax, LAF, LAS, LCF, LCS, LZpeak, LCpeak, LAPeak
+//           [v3.3.3+LCF/LCS/LCSmax，v3.3.2+LAF/LAS/LASmax 指数时间计权，v3.3.0+LAPeak]
+//   - 事件: event_type (0-3), event_severity (0-100)   [v3.3.3]
 //   - 剂量: dose_frac_niosh/osha_pel/osha_hca/eu_iso
 //   - QC: overload_flag, underrange_flag, wearing_state
 //   - 峰度: kurtosis_total, kurtosis_a_weighted, kurtosis_c_weighted, beta_kurtosis
@@ -35,10 +36,13 @@ SecondMetrics m = processor.process_segment(buffer_start, buffer_end, 1.0f);
 //   - 1/3倍频程SPL: freq_63hz_spl ~ freq_16khz_spl (9个频段)
 //   - 1/3倍频程矩S1-S4: 每个频段5个值 × 9个频段 = 45个字段
 //
-// 时间计权说明（v3.3.2，IEC 61672-1 §7）：
+// 时间计权说明（v3.3.2 起，IEC 61672-1 §7）：
 //   - LAF = A 加权 + Fast 时间计权 (τ=125ms) 瞬时读数
 //   - LAS = A 加权 + Slow 时间计权 (τ=1s) 瞬时读数
-//   - LAeq = 等效连续声级（τ=1s 时间常数，用于合规测量）
+//   - LCF = C 加权 + Fast 时间计权 (τ=125ms) 瞬时读数  [v3.3.3]
+//   - LCS = C 加权 + Slow 时间计权 (τ=1s) 瞬时读数    [v3.3.3]
+//   - LAeq / LCeq = 等效连续声级（τ=1s 时间常数，用于合规测量）
+//   - 注：v3.3.3 方案 C 删除了 Z 的时间计权（无加权，实用价值低）
 ```
 
 支持灵活时长：1秒、10ms 或任意 `sample_rate * duration_s` 个采样点。
@@ -217,19 +221,20 @@ A/C 加权滤波器的频率响应精度按照 **IEC 61672-1** 国际标准分�
 - 工业噪声监测 / 职业暴露合规 → **v3.2.1 bilinear**（3 段 biquad，性能稳定，Class 2 合规）
 - 实验室级精密研究 / 听力防护标准验证 → **v3.3.0 matched-z**（4 段 biquad，**Class 1 实验级精度**）
 
-## 指标列表（82个每秒指标 — v3.3.2+LAF/LAS）
+## 指标列表（87个每秒指标 — v3.3.3+LCF/LCS/事件）
 
 | 类别 | 数量 | 字段 |
 |------|------|------|
 | 元数据 | 2 | timestamp, duration_s |
-| 声级 | 10 | LAeq, LCeq, LZeq, LAFmax, **LASmax** [v3.3.2], **LAF** [v3.3.2], **LAS** [v3.3.2], LZpeak, LCpeak, LAPeak [v3.3.0] |
+| 声级 | 13 | LAeq, LCeq, LZeq, LAFmax, **LASmax** [v3.3.2], **LCSmax** [v3.3.3], **LAF** [v3.3.2], **LAS** [v3.3.2], **LCF** [v3.3.3], **LCS** [v3.3.3], LZpeak, LCpeak, LAPeak [v3.3.0] |
 | 剂量增量 | 4 | dose_frac_niosh, dose_frac_osha_pel, dose_frac_osha_hca, dose_frac_eu_iso |
 | 质量控制 | 3 | overload_flag (LZPeak>140 dB, IEC 61672-1 Class 1), underrange_flag, wearing_state |
+| **事件检测** | **2** | **event_type** [v3.3.3] (0=NONE..3=SEVERE), **event_severity** [v3.3.3] (0-100) |
 | 峰度 | 4 | kurtosis_total, kurtosis_a_weighted, kurtosis_c_weighted, beta_kurtosis |
 | 原始矩统计量 | 5 | n_samples, sum_x, sum_x2, sum_x3, sum_x4 |
 | 1/3倍频程SPL | 9 | freq_63hz_spl ~ freq_16khz_spl |
 | 1/3倍频程矩S1-S4 | 45 | 每个频段(n,s1,s2,s3,s4) × 9个频段 |
-| **合计** | **82** | v3.3.2 在 v3.3.0 基础上新增 LAF/LAS/LASmax 三个字段 |
+| **合计** | **87** | v3.3.3 在 v3.3.2 基础上新增 LCF/LCS/LCSmax + event_type/event_severity |
 
 ## 标准参数
 
@@ -351,6 +356,123 @@ noise_info_toolkit_gcc/
 待定 / 请参考原 Python 项目许可证
 
 ## 变更记录
+
+### v3.3.3 (2026-09-20) — 基于 LAF/LAS 的多维度事件检测
+
+**升级**：事件检测从单一峰值阈值升级为**四维度 LAF/LAS 联合判定** + **三档分级**。
+
+#### 背景
+
+`EventDetector`（接口三）原本只做单个判断：`LZPeak >= 140 dB → OVERLOAD`。
+v3.3.0 起 `LZeq >= 90 dB → IMPULSE_SUSPECT` 被禁用（屏蔽块保留在源码中）。
+导致以下场景无法检测：工业噪声合规阈值、冲击噪声、噪声水平突变、脉冲指标。
+
+#### 四维度判定架构
+
+| 维度 | 触发指标 | 阈值 | 响应时间 | 适用场景 |
+|------|---------|------|---------|---------|
+| **D1** LAF 阈值 | `LAF >= threshold` | 85 / 95 / 110 dB 三档 | 125 ms | 工业噪声合规、机器启动 |
+| **D2** 脉冲指标 | `LAF − LAS` | \> 6 / 12 dB | 1 s | 冲击噪声、瞬态事件 |
+| **D3** LAF 上升率 | `LAF(t) − LAF(t−500ms)` | \> 10 / 15 dB | 500 ms | 事件起点检测 |
+| **D4** 背景对比 | `LAF − LAeq(5min 背景)` | \> 15 dB | 5 min 收敛 | 显著事件判定 |
+
+#### 事件分级
+
+```cpp
+enum class EventType : uint8_t {
+    NONE     = 0,  // 无事件
+    MINOR    = 1,  // LAF > 85 dB 或 上升 > 10 dB 或 脉冲 > 6 dB
+    MODERATE = 2,  // LAF > 95 dB 或 上升 > 15 dB
+    SEVERE   = 3,  // LAF > 110 dB 或 脉冲 > 12 dB 或 LZPeak ≥ 140 dB
+};
+```
+
+#### 新增 API（两个重载）
+```cpp
+// ─── 设备侧（只需 buf/end，无需 NoiseProcessor）───
+// 内部自带轻量 A 计权 4 段 biquad + Fast/Slow 时间计权，逐样本算出
+// LAF / LAS / LAeq / LZPeak，再走四维度判定。
+EventResult r = detector.check_metrics(buffer_start, buffer_end);
+
+// ─── 主机侧（已有 SecondMetrics，避免重复滤波）───
+SecondMetrics m = proc.process_segment(buf, end, 1.0f);  // 先算指标
+EventResult r2 = detector.check_metrics(m);               // 再判定
+
+// r.event_type     — 分级（NONE/MINOR/MODERATE/SEVERE）
+// r.severity       — 严重程度评分 0-100
+// r.laf_dB / r.las_dB / r.impulse_metric_dB
+// r.laf_rise_dB / r.background_delta_dB        — 各维度原始值
+// r.trigger_*      — 四维度触发标志
+```
+
+> **两个重载结果完全一致**（同一 A 计权链 + 同一时间计权 + 同一判定逻辑），
+> 已用 20 Hz 实录 WAV 逐秒对比验证：**35/35 秒事件分级一致**。
+> 设备侧选哪个取决于手上有什么：只有原始缓冲 → 用 buf/end 重载；
+> 已跑过 `process_segment()` → 用 metrics 重载（省一遍滤波）。
+
+- 旧接口 `check_segment(buffer)` **完全保留**（向后兼容，仅过载/欠量程判定）
+- 新增 `SecondMetrics::event_type` / `event_severity` 字段（供 CSV 输出）
+- 新增 `MinuteMetrics::event_minor_count` / `event_moderate_count` / `event_severe_count`
+
+#### 设计要点
+
+- **与 NoiseProcessor 解耦**：调用方负责把 `EventResult` 回写到 `SecondMetrics.event_type`
+- **阈值可配置**：全部位于 `EventDetectorConfig`，运行时/编译期均可改
+- **零堆分配**：全部状态在内（LAF 历史环形缓冲 16 项 + 背景指数平均）
+- **内存增量**：LAF 历史 16×8 = 128 字节 + 背景/计数 ~24 字节 ≈ **152 字节**
+- **过载直通**：`LZPeak ≥ 140 dB` 仍直接判 SEVERE（兼容旧行为）
+
+#### C 计权同步修复（v3.3.3 方案 C）
+
+C 计权与 A 计权共用同一个 20.6 Hz 双极点，同样有滤波器建立时间问题（但 C 在 20 Hz
+只衰减 −6.22 dB，故影响远小于 A 的 −50.50 dB）。
+
+**修复内容**：
+- 滤波器状态持久（v3.3.2 已覆盖 C 链）——LCeq 自动受益
+- **新增 C 的时间计权输出**：`LCF` / `LCS` / `LCSmax`
+- **删除 Z 的时间计权状态**（`laf_sq_z_`/`las_sq_z_`）——Z 无加权，瞬时时间计权实用价值低，
+  每样本省 4 组乘加
+
+**C 计权实测（纯音 @ 94 dB SPL）**：
+
+| 频率 | LCeq 修复前（每段重置）| LCeq 修复后（连续）| IEC 理论 | 改善 |
+|------|---------------------|------------------|---------|------|
+| 20 Hz | 87.11（偏差 −0.67）| **87.73（偏差 −0.05）** | 87.78 | +0.62 dB |
+| 25 Hz | 88.89（−0.67）| **89.51（−0.05）** | 89.56 | +0.62 dB |
+| 50 Hz | 92.05（−0.65）| **92.65（−0.05）** | 92.70 | +0.60 dB |
+| 100 Hz | 93.07（−0.63）| **93.66（−0.04）** | 93.70 | +0.59 dB |
+
+**LCF/LCS 输出验证**：
+
+| 频率 | LAF | LAS | LCF | LCS | LCSmax | 理论 (A / C) |
+|------|-----|-----|-----|-----|--------|-------------|
+| 20 Hz | 43.56 | 43.61 | 87.75 | 87.74 | 87.74 | 43.5 / 87.8 ✅ |
+| 100 Hz | 74.88 | 74.86 | 93.64 | 93.65 | 93.65 | 74.9 / 93.7 ✅ |
+| 1 kHz | 94.00 | 93.99 | 94.00 | 93.99 | 93.99 | 94.0 / 94.0 ✅ |
+
+**结构体尺寸**：`SecondMetrics` 324 → **336 B**；`MinuteMetrics` 328 → **332 B**。
+
+#### 验证
+
+```
+test_event_detector_v3.3.3:  22 passed, 0 failed
+   D1 阈值分级 4/4  ✅
+   D2 脉冲指标 4/4  ✅
+   D3 上升率   3/3  ✅
+   D4 背景对比 2/2  ✅
+   边界/兼容/reset 9/9 ✅
+
+全量测试: 9/9 通过（含新增 test_event_detector_v3.3.3）
+```
+
+#### 文件变更
+
+- `include/event_detector.hpp`: `EventType` 枚举 + `EventResult` 结构 + 配置阈值 + `check_metrics()`
+- `src/event_detector.cpp`: 四维度判定实现 + LAF 历史环形缓冲 + 背景指数平均 + 评分
+- `include/noise_metrics.hpp`: `SecondMetrics` event_type/event_severity；`MinuteMetrics` 事件计数
+- `src/noise_processor.cpp`: `aggregate_metrics()` 追加事件分级计数
+- `tests/test_event_detector_v3.3.3.cpp`: 22 条单元测试
+- `docs/DEVELOPMENT_PLAN_v3.3.3.md`: 开发计划
 
 ### v3.3.2 (2026-09-20) — 指数时间计权（IEC 61672-1 §7）+ LAF/LAS 输出
 

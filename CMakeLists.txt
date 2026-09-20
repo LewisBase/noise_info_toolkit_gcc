@@ -61,6 +61,16 @@ if(BUILD_TESTS)
     target_link_libraries(test_class1_precision noise_toolkit)
     add_test(NAME test_class1_precision COMMAND test_class1_precision)
 
+    # v3.3.3: LAF/LAS-based event detection tests
+    add_executable(test_event_detector_v3.3.3 tests/test_event_detector_v3.3.3.cpp)
+    target_link_libraries(test_event_detector_v3.3.3 noise_toolkit)
+    add_test(NAME test_event_detector_v3.3.3 COMMAND test_event_detector_v3.3.3)
+
+    # v3.3.3: 设备侧 buf/end 接口一致性测试（需 WAV 参数，默认跳过）
+    add_executable(test_event_buf_api_v3.3.3 tests/test_event_buf_api_v3.3.3.cpp)
+    target_link_libraries(test_event_buf_api_v3.3.3 noise_toolkit)
+    # 注：需 WAV 路径入参，不做 ctest 自动注册（手动运行）
+
     # End-to-end validation: LAeq, LCeq, Dose on known signals
     add_executable(test_end_to_end tests/test_end_to_end.cpp)
     target_link_libraries(test_end_to_end noise_toolkit)

@@ -139,22 +139,23 @@ private:
     float a_weight_gain_ = 1.0f;
     float c_weight_gain_ = 1.0f;
 
-    // === v3.3.2: Exponential time weighting state (IEC 61672-1 §7) ===
-    // Three weighting chains (A/C/Z) × two time constants (Fast/Slow) = 6 state vars
-    // Memory cost: 6 × 4 bytes = 24 bytes (almost zero RAM overhead)
+    // === v3.3.2/v3.3.3: Exponential time weighting state (IEC 61672-1 §7) ===
+    // A/C 加权各两个时间常数（Fast/Slow）= 4 个状态变量
+    // Memory cost: 4 × 4 bytes = 16 bytes (almost zero RAM overhead)
+    //
+    // v3.3.3（方案 C）：删除 Z 加权的时间计权状态——Z 无加权，其瞬时时间计权实用价值低，
+    // 避免每样本 4 组乘加浪费。A/C 保留（C 有低频评估 / LCpeak 配套用途）。
     //
     // Formula: state = α · state + (1−α) · y²
     //   α_F = exp(−1 / (0.125 · fs))  // Fast time constant τ=125ms
     //   α_S = exp(−1 / (1.0   · fs))  // Slow time constant τ=1s
     //
     // Initialized to 0; first process_segment() builds up from zero (transient period ~τ).
-    // After ~7τ the readings match steady-state within IEC Class 1 tolerance.
+    // 滤波器状态跨调用持续保留（不重置），与商用 Class 1 声级计一致。
     float laf_sq_a_{0.0f};   // A-weighted Fast time-weighted power state (τ=125ms)
     float las_sq_a_{0.0f};   // A-weighted Slow time-weighted power state (τ=1s)
     float laf_sq_c_{0.0f};   // C-weighted Fast time-weighted power state
     float las_sq_c_{0.0f};   // C-weighted Slow time-weighted power state
-    float laf_sq_z_{0.0f};   // Z-weighted Fast time-weighted power state
-    float las_sq_z_{0.0f};   // Z-weighted Slow time-weighted power state
 
     // 9 × 1/3 octave bandpass filters (persistent)
     BiquadFilter band_filters_[9] = {
@@ -171,7 +172,7 @@ private:
 
     /** @brief Reset all time-weighting state (call on power-on or sample-rate change) */
     void reset_time_weighting() noexcept {
-        laf_sq_a_ = las_sq_a_ = laf_sq_c_ = las_sq_c_ = laf_sq_z_ = las_sq_z_ = 0.0f;
+        laf_sq_a_ = las_sq_a_ = laf_sq_c_ = las_sq_c_ = 0.0f;
     }
 };
 
