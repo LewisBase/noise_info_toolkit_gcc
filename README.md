@@ -60,35 +60,86 @@ for (int i = 0; i < 60; ++i) {
 MinuteMetrics minute = processor.aggregate_metrics(seconds, 60, 1.0f);
 ```
 
-### 接口三：逐段检测 — `check_segment(buffer_start, buffer_end)`
+### 接口三：事件检测 — `check_metrics()`（v3.3.3 升级）
 
-传入 Z 加权 PCM 缓冲区指针（float，单位 Pa），返回本段异常类型 `EventCheckResult`。独立于 `NoiseProcessor`，零堆分配（实例约 28 bytes）：
+事件检测从单一峰值阈值升级为 **四维度 LAF/LAS 联合判定 + 三档分级**。
+独立于 `NoiseProcessor`，零堆分配。
+
+#### 两个重载（关键：设备侧只需 buf/end）
 
 ```cpp
 #include "event_detector.hpp"
 
 using namespace noise_toolkit;
 
-EventDetectorConfig config;  // 可选，均有默认值
-config.leq_threshold_db = 90.0f;
-config.peak_threshold_db = 140.0f;   // 同 OVERLOAD_THRESHOLD
-config.debounce_frames = 3;
-config.cooldown_frames = 5;
+EventDetectorConfig config;   // 可选，均有默认值
+config.sample_rate = 48000;
+// v3.3.3 阈值（可按场景调整）：
+config.laf_minor_db      = 85.0f;   // D1
+config.laf_moderate_db   = 95.0f;
+config.laf_severe_db     = 110.0f;
+config.impulse_minor_db  = 6.0f;    // D2
+config.impulse_severe_db = 12.0f;
+config.laf_rise_minor_db    = 10.0f;  // D3
+config.laf_rise_moderate_db = 15.0f;
+config.background_delta_db  = 15.0f;  // D4
 
 EventDetector detector(config);
 
-EventCheckResult r = detector.check_segment(buffer_start, buffer_end);
+// ── 路径 A：设备侧（只需 buf/end，无需 NoiseProcessor）──
+// 内部自带轻量 A 计权 4 段 biquad + Fast/Slow 时间计权状态（~150 B），
+// 逐样本算出 LAF/LAS/LAeq/LZPeak 后走四维度判定。
+EventResult r = detector.check_metrics(buffer_start, buffer_end);
 
-// r 取值：
-//   - NORMAL:          无异常
-//   - OVERLOAD:        LZpeak 过载（不受 cooldown 抑制）
-//   - UNDERRANGE:      LZeq 低于 underrange_threshold_db（默认 30 dB）
-//   - IMPULSE_SUSPECT: LZeq 连续 debounce_frames 帧超 leq_threshold_db（默认 90 dB）
-//
-// 触发后可用 was_impulse_detected() / clear_impulse_flag() 标记起始点
+// ── 路径 B：主机侧（已有指标，避免重复滤波）──
+SecondMetrics m = proc.process_segment(buf, end, 1.0f);
+EventResult r = detector.check_metrics(m);
+
+// r 内容：
+//   event_type          NONE / MINOR / MODERATE / SEVERE
+//   severity            0-100 严重程度评分
+//   laf_dB / las_dB     当前时间加权值
+//   impulse_metric_dB   LAF − LAS（脉冲指标，D2）
+//   laf_rise_dB         LAF(t) − LAF(t−500ms)（D3）
+//   background_delta_dB LAF − 5 min 背景（D4）
+//   trigger_*           四维度触发标志
+//   is_overload         LZPeak ≥ 140 dB（兼容旧行为）
 ```
 
-典型用法：与 `process_segment()` 相同块长（如 10 ms @ 48 kHz = 480 samples），可在指标计算前后任意调用。
+> **两条路径实测逐秒 100% 一致**（20 Hz / 25 Hz WAV 各 40/40）。
+
+#### 四维度判定与分级
+
+| 维度 | 触发指标 | 阈值 | 响应 | 适用场景 |
+|------|---------|------|------|---------|
+| **D1** LAF 阈值 | `LAF >= threshold` | 85 / 95 / 110 dB | 125 ms | 工业噪声合规、机器启动 |
+| **D2** 脉冲指标 | `LAF − LAS` | \> 6 / 12 dB | 1 s | 冲击噪声、瞬态事件 |
+| **D3** LAF 上升率 | `LAF(t) − LAF(t−500ms)` | \> 10 / 15 dB | 500 ms | 事件起点检测 |
+| **D4** 背景对比 | `LAF − LAeq(5 min 背景)` | \> 15 dB | 5 min 收敛 | 显著事件判定 |
+
+```cpp
+enum class EventType : uint8_t {
+    NONE     = 0,  // 无事件
+    MINOR    = 1,  // LAF > 85 dB 或 上升 > 10 dB 或 脉冲 > 6 dB
+    MODERATE = 2,  // LAF > 95 dB 或 上升 > 15 dB
+    SEVERE   = 3,  // LAF > 110 dB 或 脉冲 > 12 dB 或 LZPeak ≥ 140 dB
+};
+```
+
+#### 调用契约（重要）
+
+**必须对每个音频段都调用** `check_metrics()`。内部滤波器与时间计权状态跨调用持续保留；
+若只对部分段调用，未送入的音频会被滤波器“错过”，导致 LAF/LAS 偏离真实时基。
+
+#### 旧接口（保留，行为不变）
+
+```cpp
+EventCheckResult r = detector.check_segment(buffer_start, buffer_end);
+//   NORMAL / OVERLOAD（LZpeak ≥ 140 dB）/ UNDERRANGE（LZeq < 30 dB）
+```
+
+旧接口仅做过载/欠量程判定，**不含** v3.3.3 的四维度检测与分级。
+新集成推荐直接用 `check_metrics()`。
 
 ### 接口四：剂量累积与 Dose% / TWA / LEX,8h 换算（v3.1.3 新增）
 
