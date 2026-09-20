@@ -1,6 +1,6 @@
 # noise_info_toolkit_gcc
 
-C++ 实现的轻量级噪声信息计算工具包（**v3.3.1** — 1/3 倍频程 scipy 重生成，IEEE Class 2 工业级精度），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
+C++ 实现的轻量级噪声信息计算工具包（**v3.3.2** — 指数时间计权（IEC 61672-1 §7）+ LAF/LAS 输出，IEC Class 1 实验级精度），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
 
 ## 设计目标
 
@@ -12,7 +12,7 @@ C++ 实现的轻量级噪声信息计算工具包（**v3.3.1** — 1/3 倍频程
 
 ### 接口一：逐段调用 — `process_segment(buffer_start, buffer_end, duration_s)`
 
-传入音频缓冲区指针（float）和时长（秒），返回该段所有 **81 个指标**：
+传入音频缓冲区指针（float）和时长（秒），返回该段所有 **82 个指标**：
 
 ```cpp
 #include "noise_processor.hpp"
@@ -24,15 +24,21 @@ NoiseProcessor processor(48000);  // sample_rate
 // 传入 float 缓冲区指针和时长
 SecondMetrics m = processor.process_segment(buffer_start, buffer_end, 1.0f);
 
-// m 包含 81 个指标：
+// m 包含 82 个指标：
 //   - 元数据: timestamp, duration_s
-//   - 声级: LAeq, LCeq, LZeq, LAFmax, LZpeak, LCpeak, LAPeak    [v3.3.0+LAPeak] 
+//   - 声级: LAeq, LCeq, LZeq, LAFmax, LASmax, LAF, LAS, LZpeak, LCpeak, LAPeak
+//           [v3.3.2+LAF/LAS/LASmax 指数时间计权，v3.3.0+LAPeak]
 //   - 剂量: dose_frac_niosh/osha_pel/osha_hca/eu_iso
 //   - QC: overload_flag, underrange_flag, wearing_state
 //   - 峰度: kurtosis_total, kurtosis_a_weighted, kurtosis_c_weighted, beta_kurtosis
 //   - 原始矩: n_samples, sum_x/s1, sum_x2/s2, sum_x3/s3, sum_x4/s4
 //   - 1/3倍频程SPL: freq_63hz_spl ~ freq_16khz_spl (9个频段)
 //   - 1/3倍频程矩S1-S4: 每个频段5个值 × 9个频段 = 45个字段
+//
+// 时间计权说明（v3.3.2，IEC 61672-1 §7）：
+//   - LAF = A 加权 + Fast 时间计权 (τ=125ms) 瞬时读数
+//   - LAS = A 加权 + Slow 时间计权 (τ=1s) 瞬时读数
+//   - LAeq = 等效连续声级（τ=1s 时间常数，用于合规测量）
 ```
 
 支持灵活时长：1秒、10ms 或任意 `sample_rate * duration_s` 个采样点。
@@ -211,19 +217,19 @@ A/C 加权滤波器的频率响应精度按照 **IEC 61672-1** 国际标准分�
 - 工业噪声监测 / 职业暴露合规 → **v3.2.1 bilinear**（3 段 biquad，性能稳定，Class 2 合规）
 - 实验室级精密研究 / 听力防护标准验证 → **v3.3.0 matched-z**（4 段 biquad，**Class 1 实验级精度**）
 
-## 指标列表（82个每秒指标 — v3.3.0+LAPeak）
+## 指标列表（82个每秒指标 — v3.3.2+LAF/LAS）
 
 | 类别 | 数量 | 字段 |
 |------|------|------|
 | 元数据 | 2 | timestamp, duration_s |
-| 声级 | 7 | LAeq, LCeq, LZeq, LAFmax, LZpeak, LCpeak, **LAPeak** [v3.3.0] |
+| 声级 | 10 | LAeq, LCeq, LZeq, LAFmax, **LASmax** [v3.3.2], **LAF** [v3.3.2], **LAS** [v3.3.2], LZpeak, LCpeak, LAPeak [v3.3.0] |
 | 剂量增量 | 4 | dose_frac_niosh, dose_frac_osha_pel, dose_frac_osha_hca, dose_frac_eu_iso |
 | 质量控制 | 3 | overload_flag (LZPeak>140 dB, IEC 61672-1 Class 1), underrange_flag, wearing_state |
 | 峰度 | 4 | kurtosis_total, kurtosis_a_weighted, kurtosis_c_weighted, beta_kurtosis |
 | 原始矩统计量 | 5 | n_samples, sum_x, sum_x2, sum_x3, sum_x4 |
 | 1/3倍频程SPL | 9 | freq_63hz_spl ~ freq_16khz_spl |
 | 1/3倍频程矩S1-S4 | 45 | 每个频段(n,s1,s2,s3,s4) × 9个频段 |
-| **合计** | **82** | 81 个有效字段 + 1 LAPeak 新增 |
+| **合计** | **82** | v3.3.2 在 v3.3.0 基础上新增 LAF/LAS/LASmax 三个字段 |
 
 ## 标准参数
 
@@ -345,6 +351,64 @@ noise_info_toolkit_gcc/
 待定 / 请参考原 Python 项目许可证
 
 ## 变更记录
+
+### v3.3.2 (2026-09-20) — 指数时间计权（IEC 61672-1 §7）+ LAF/LAS 输出
+
+**Bug 修复**：PE-04 频段 20/25 Hz 低频 A 计权偏差（+25 dB）。
+
+**根因**：
+- A 计权段 2（20.6 Hz 双极点，|p|=0.9973）建立时间约 **7.7 s**
+- 固件每 10 ms 报一个 LAeq 子累计再做能量平均 → 等效 **10 ms 积分窗口**
+- 滤波器在 10 ms 内完全来不及进入稳态，RMS 捕获的是未衰减的瞬态信号
+- 现象：20 Hz @ 94 dB SPL 时 LAeq 虚高 +25 dB（67.5 dBA vs IEC 42.4 dBA）
+- 频率越高极点距单位圆越远，收敛越快 → 1 kHz 以上无此问题
+
+**修复 1：接口二改用指数时间计权**（IEC 61672-1 §7）
+
+```cpp
+// 每样本更新
+state = α · state + (1 − α) · y²
+α = exp(−1 / (τ · fs))
+//   Fast (τ=125ms) → LAF
+//   Slow (τ=1s)    → LAS
+```
+
+- 新增 `SecondMetrics`: **LAF / LAS / LASmax**
+- 新增 `MinuteMetrics`: **LASmax**
+- 内存代价：6 × float32 = **24 字节**（比滑动窗口方案 192 KB 小 8000 倍）
+
+**修复 2：滤波器状态跨调用持续保留**（v3.3.1 残留 bug）
+
+- 删除 `process_segment()` 中每段的 `a_weight_chain_.reset()` / `c_weight_chain_.reset()`
+- 新增 `NoiseProcessor::reset()` 供手动重新开始测量使用
+- 原因：每段重置导致滤波器永远只有 1 s 建立时间，对 20 Hz（需 7.7 s）远远不够
+- 与商用 Class 1 声级计行为一致（开机后滤波器状态连续运行）
+
+**验证结果**：
+
+| 测试项 | v3.3.1 | v3.3.2 | IEC 61672 理论 | 判定 |
+|--------|--------|--------|----------------|------|
+| 1 kHz 纯音 94 dB SPL | 94.00 | **94.00 dBA** | 94.00 | ✅ −0.00 dB |
+| 20 Hz 纯音 94 dB SPL | ~67.7 | **43.72 dBA** | 43.50 | ✅ +0.22 dB |
+| 25 Hz 纯音 94 dB SPL | — | **49.23 dBA** | 48.10 | ✅ +1.13 dB |
+| 4 kHz 纯音 94 dB SPL | — | **94.92 dBA** | 94.90 | ✅ +0.02 dB |
+| 260918 Pa-WAV 实录 | 67.49 dBA | **55.14 dBA** | — | 改善 12.35 dB |
+
+**时间计权选型说明**：
+- τ = 125 ms / 1 s 是 IEC 61672-1 §7.4 规定的标准值（容差 ±20%）
+- 建议使用标准值以保证 Class 1 合规路径开放、与商用产品对齐
+- 非合规应用可自定义 τ（需在文档中明确标注）
+
+**验证方法学备注**：
+- 评估低频 A 计权应使用**纯音合成信号**（单段长信号），不能用含宽带成分的实录 WAV
+- 实录 WAV 的 `LAeq − LZeq` 比值取决于信号成分，不是滤波器性能的直接度量
+
+**文件变更**：
+- `include/noise_metrics.hpp`: LAF/LAS/LASmax 字段（82 个每秒指标）
+- `include/noise_processor.hpp`: 6 个时间计权状态 + `reset()`
+- `src/noise_processor.cpp`: 指数时间计权实现 + 滤波器状态连续性
+- `tests/test_v3.3.2_laeq_validation.cpp`: 验证脚本
+- `docs/DEVELOPMENT_PLAN_v3.3.2.md`: 开发计划（含 v1/v2/v3 三方案对比）
 
 ### v3.3.1 (2026-09-09) — 1/3 倍频程 b/a 系数 scipy 重生成
 
