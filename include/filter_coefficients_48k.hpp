@@ -1,12 +1,21 @@
 /**
  * @file filter_coefficients_48k.hpp
- * @brief Pre-computed A/C weighting filter coefficients for 48kHz sample rate
+ * @brief Biquad chain helper + A/C weighting section counts (48 kHz)
  *
- * Generated from the same algorithm as filter_design::a_weighting_design() and
- * filter_design::c_weighting_design() to ensure bit-exact equivalence.
+ * v3.3.4 —— 本文件原先内嵌了一份 48 kHz 的 A/C 计权系数副本
+ * （A_WEIGHTING_48K / C_WEIGHTING_48K）。那两份副本与
+ * include/weighting_coefficients_multirate.hpp 的 WEIGHTING_TABLE 重复，
+ * 其中 A 副本还是「未归一化」形式（1 kHz 增益需调用方单独施加），于是：
+ *   - src/signal_utils.cpp 的 A 计权路径漏乘增益 → 偏高 +2.43 dB
+ *   - src/event_detector.cpp 的非 48 kHz 回落路径把增益写死为 1.0 → 同样偏高
+ *   - 且随着 v3.3.4 重新设计系数，两份副本会不断漂移（第二份 C 副本在 8 kHz
+ *     同样给出 -1.09 dB，正是硬件实测偏高 +2.0 dB 的来源之一）
+ * 故 v3.3.4 删除这两份副本，全部调用点统一改用 WEIGHTING_TABLE
+ * （系数与 1 kHz 增益成对提供，单一数据源）。
  *
- * All coefficients are pre-normalized (a0 = 1.0) for use with BiquadChain,
- * which implements Transposed Direct Form II without a0 division.
+ * 本文件现在只保留与「链结构」有关的内容：
+ *   - BiquadChain<SECTIONS> 模板（转置直接 II 型，零堆分配）
+ *   - A_WEIGHTING_SECTIONS / C_WEIGHTING_SECTIONS 段数常量
  */
 
 #pragma once
@@ -50,56 +59,9 @@ struct BiquadChain {
     }
 };
 
-//==============================================================================
-// A-weighting 4-section biquad chain for 48kHz (pre-normalized, a0=1.0)
-// v3.3.0: matched-z + 2nd-order peaking EQ correction → IEC 61672-1 Class 1
-//==============================================================================
-
+// A/C 计权链的最大段数（链路容量上限；实际系数见 weighting_coefficients_multirate.hpp）
+// 注意：生成器输出必须与这里的容量对齐，否则装表时会被静默截断。
 constexpr size_t A_WEIGHTING_SECTIONS = 4;
-
-constexpr BiquadChain<A_WEIGHTING_SECTIONS> A_WEIGHTING_48K = {
-    {
-        // Section 0: High-frequency matched-z pole (12194 Hz analog)
-        { 1.00000000f,  0.00000000f,  0.00000000f, 1.0f,
-         -0.40532256f,  0.04107159f },
-        // Section 1: Mid-frequency matched-z pole (737.86 + 107.65 Hz analog)
-        { 1.00000000f, -2.00000000f,  1.00000000f, 1.0f,
-         -1.89393899f,  0.89522729f },
-        // Section 2: Low-frequency matched-z pole (20.6 Hz analog, double)
-        { 1.00000000f, -2.00000000f,  1.00000000f, 1.0f,
-         -1.99461446f,  0.99462171f },
-        // Section 3: 2nd-order peaking EQ correction (differential evolution optimized)
-        { 0.81132790f,  0.84654423f,  0.16617729f, 1.0f,
-          0.84654423f, -0.02249481f }
-    },
-    {0}  // state: zero-initialized
-};
-
-//==============================================================================
-// C-weighting 3-section biquad chain for 48kHz (pre-normalized, a0=1.0)
-// v3.3.4: 复极点最小二乘拟合重设计（零点锁定 z=1）→ IEC 61672-1 Class 1
-//         1 kHz 归一化增益（0.50568658）已内嵌到 Section 0 的 b 系数中。
-// 修复前：C 计权高频偏高 —— 8 kHz 为 −1.09 dB（应为 −3.0 dB），与硬件实测一致。
-// 修复后：max|Δ| = 0.158 dB（33 个 IEC 1/3 倍频程频点）。
-// 注：A_WEIGHTING_48K 仍为未归一化形式（增益 0.75577396405 由调用方单独施加，
-//     见 weighting_coefficients_multirate.hpp 的 WEIGHTING_TABLE）。
-//==============================================================================
-
 constexpr size_t C_WEIGHTING_SECTIONS = 3;
-
-constexpr BiquadChain<C_WEIGHTING_SECTIONS> C_WEIGHTING_48K = {
-    {
-        // Section 0: 归一化双零点 (z=1) + 高频复极点对；b 已含 1 kHz 增益
-        { 5.05686558e-01f, -1.01137312e+00f,  5.05686558e-01f, 1.0f,
-          6.63510600e-02f,  1.25026270e-01f },
-        // Section 1: 中频复极点对
-        { 1.00000000f,  0.00000000f,  0.00000000f, 1.0f,
-         -7.49203090e-01f,  1.72225700e-01f },
-        // Section 2: 20.6 Hz 双重实极点
-        { 1.00000000f,  0.00000000f,  0.00000000f, 1.0f,
-         -1.99463560e+00f,  9.94642800e-01f }
-    },
-    {0}  // state: zero-initialized
-};
 
 } // namespace noise_toolkit

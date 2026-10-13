@@ -23,13 +23,27 @@ EventDetector::EventDetector(const EventDetectorConfig& config) noexcept
 void EventDetector::init_internal_chain() noexcept {
     const int fs = (config_.sample_rate > 0) ? config_.sample_rate : 48000;
 
-    // 默认先填 48 kHz 常量表（保证任何情况下都有合法系数）
+    // v3.3.4: 默认先填 48 kHz 表（保证任何情况下都有合法系数）。
+    // 原先这里用的是 filter_coefficients_48k.hpp 的 A_WEIGHTING_48K ——
+    // 那是「未归一化」副本，且 a_gain_ 写死 1.0，非 48 kHz 回落时会偏高 2.43 dB。
+    // 现统一改用 WEIGHTING_TABLE（系数与 1 kHz 增益成对，单一数据源）。
     for (size_t i = 0; i < A_WEIGHTING_SECTIONS; ++i) {
-        a_chain_.sections[i] = A_WEIGHTING_48K.sections[i];
+        a_chain_.sections[i] = BiquadCoefficients{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
     }
     a_gain_ = 1.0f;
+    if (const auto* def = find_weighting_entry(48000)) {
+        for (int i = 0; i < def->a_count && i < static_cast<int>(A_WEIGHTING_SECTIONS); ++i) {
+            a_chain_.sections[i].b0 = def->a[i].b0;
+            a_chain_.sections[i].b1 = def->a[i].b1;
+            a_chain_.sections[i].b2 = def->a[i].b2;
+            a_chain_.sections[i].a0 = 1.0f;
+            a_chain_.sections[i].a1 = def->a[i].a1;
+            a_chain_.sections[i].a2 = def->a[i].a2;
+        }
+        a_gain_ = def->a_gain;
+    }
 
-    // 优先查多采样率表（8k/16k/22.05k/32k/44.1k/48k/96k）
+    // 优先查目标采样率表（v3.3.4 起仅 48000）
     if (const auto* entry = find_weighting_entry(fs)) {
         for (int i = 0; i < entry->a_count && i < static_cast<int>(A_WEIGHTING_SECTIONS); ++i) {
             a_chain_.sections[i].b0 = entry->a[i].b0;

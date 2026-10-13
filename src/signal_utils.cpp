@@ -8,6 +8,7 @@
 #include "signal_utils.hpp"
 #include "iir_filter.hpp"
 #include "filter_coefficients_48k.hpp"
+#include "weighting_coefficients_multirate.hpp"
 #include "math_constants.hpp"
 #include <algorithm>
 #include <numeric>
@@ -39,6 +40,47 @@ const std::vector<float> C_WEIGHTING_GAINS = {
     -0.8f, -0.2f, 0.0f, 0.0f, 0.0f, -0.2f, -0.8f, -3.0f, -8.5f
 };
 
+// ---------------------------------------------------------------------------
+// v3.3.4: 48 kHz 计权系数统一从 WEIGHTING_TABLE 装入（单一数据源）。
+// 未使用的段填为直通（b0=1，其余 0）；1 kHz 归一化增益由调用方在链后一次性施加。
+// 原先这里用的是 filter_coefficients_48k.hpp 的 A_WEIGHTING_48K / C_WEIGHTING_48K
+// 副本，且漏乘 A 的增益（偏高 +2.43 dB）。
+// ---------------------------------------------------------------------------
+inline void load_48k_chain(BiquadChain<A_WEIGHTING_SECTIONS>& chain) {
+    for (size_t i = 0; i < A_WEIGHTING_SECTIONS; ++i) {
+        chain.sections[i] = BiquadCoefficients{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+    }
+    if (const auto* e = find_weighting_entry(48000)) {
+        for (int i = 0; i < e->a_count && i < static_cast<int>(A_WEIGHTING_SECTIONS); ++i) {
+            chain.sections[i].b0 = e->a[i].b0;
+            chain.sections[i].b1 = e->a[i].b1;
+            chain.sections[i].b2 = e->a[i].b2;
+            chain.sections[i].a0 = 1.0f;
+            chain.sections[i].a1 = e->a[i].a1;
+            chain.sections[i].a2 = e->a[i].a2;
+        }
+    }
+}
+
+inline void load_48k_chain(BiquadChain<C_WEIGHTING_SECTIONS>& chain) {
+    for (size_t i = 0; i < C_WEIGHTING_SECTIONS; ++i) {
+        chain.sections[i] = BiquadCoefficients{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+    }
+    if (const auto* e = find_weighting_entry(48000)) {
+        for (int i = 0; i < e->c_count && i < static_cast<int>(C_WEIGHTING_SECTIONS); ++i) {
+            chain.sections[i].b0 = e->c[i].b0;
+            chain.sections[i].b1 = e->c[i].b1;
+            chain.sections[i].b2 = e->c[i].b2;
+            chain.sections[i].a0 = 1.0f;
+            chain.sections[i].a1 = e->c[i].a1;
+            chain.sections[i].a2 = e->c[i].a2;
+        }
+    }
+}
+
+inline float gain_48k_a() { const auto* e = find_weighting_entry(48000); return e ? e->a_gain : 1.0f; }
+inline float gain_48k_c() { const auto* e = find_weighting_entry(48000); return e ? e->c_gain : 1.0f; }
+
 // WeightedSignalProcessor class to manage SOS filters
 class WeightedSignalProcessor {
 public:
@@ -46,13 +88,16 @@ public:
 
     void init_a_weighting(float sample_rate) {
         if (sample_rate == 48000.0f) {
-            // Use pre-computed constexpr coefficients (no runtime design)
-            a_chain_ = A_WEIGHTING_48K;
+            // v3.3.4: 统一从 WEIGHTING_TABLE 装入（系数 + 1 kHz 增益成对）
+            load_48k_chain(a_chain_);
+            gain_a_ = gain_48k_a();
             a_chain_.reset();
             use_chain_a_ = true;
         } else {
-            // Fallback to runtime design for non-48kHz
-            sos_a_ = filter_design::a_weighting_design(sample_rate);
+            // Fallback to runtime design for non-48kHz（v3.3.4：同时取回 1 kHz 增益）
+            float g = 1.0f;
+            sos_a_ = filter_design::a_weighting_design(sample_rate, &g);
+            gain_a_ = g;
             filters_a_.clear();
             for (const auto& coef : sos_a_) {
                 filters_a_.emplace_back(coef);
@@ -63,11 +108,15 @@ public:
 
     void init_c_weighting(float sample_rate) {
         if (sample_rate == 48000.0f) {
-            c_chain_ = C_WEIGHTING_48K;
+            // v3.3.4: 统一从 WEIGHTING_TABLE 装入（系数 + 1 kHz 增益成对）
+            load_48k_chain(c_chain_);
+            gain_c_ = gain_48k_c();
             c_chain_.reset();
             use_chain_c_ = true;
         } else {
-            sos_c_ = filter_design::c_weighting_design(sample_rate);
+            float g = 1.0f;
+            sos_c_ = filter_design::c_weighting_design(sample_rate, &g);
+            gain_c_ = g;
             filters_c_.clear();
             for (const auto& coef : sos_c_) {
                 filters_c_.emplace_back(coef);
@@ -80,7 +129,7 @@ public:
         if (use_chain_a_) {
             std::vector<float> result(signal.size());
             for (size_t i = 0; i < signal.size(); ++i) {
-                result[i] = a_chain_.process(signal[i]);
+                result[i] = a_chain_.process(signal[i]) * gain_a_;
             }
             return result;
         }
@@ -88,6 +137,7 @@ public:
         for (auto& filter : filters_a_) {
             result = filter.process(result);
         }
+        for (float& v : result) { v *= gain_a_; }   // v3.3.4: 补上 1 kHz 归一化增益
         return result;
     }
 
@@ -95,7 +145,7 @@ public:
         if (use_chain_c_) {
             std::vector<float> result(signal.size());
             for (size_t i = 0; i < signal.size(); ++i) {
-                result[i] = c_chain_.process(signal[i]);
+                result[i] = c_chain_.process(signal[i]) * gain_c_;
             }
             return result;
         }
@@ -103,6 +153,7 @@ public:
         for (auto& filter : filters_c_) {
             result = filter.process(result);
         }
+        for (float& v : result) { v *= gain_c_; }   // v3.3.4: 补上 1 kHz 归一化增益
         return result;
     }
 
@@ -112,6 +163,8 @@ private:
     BiquadChain<C_WEIGHTING_SECTIONS> c_chain_{};
     bool use_chain_a_ = false;
     bool use_chain_c_ = false;
+    float gain_a_ = 1.0f;   // v3.3.4: 1 kHz 归一化增益（原先缺失）
+    float gain_c_ = 1.0f;
 
     // Runtime design path (other sample rates)
     std::vector<BiquadCoefficients> sos_a_;
@@ -138,39 +191,53 @@ std::vector<float> apply_c_weighting(const std::vector<float>& signal, float sam
 // Streaming A-weighting: filter samples in-place (zero heap allocation)
 void apply_a_weighting_inplace(float* data, size_t count, float sample_rate) {
     if (sample_rate == 48000.0f) {
-        static BiquadChain<A_WEIGHTING_SECTIONS> chain = A_WEIGHTING_48K;
+        static BiquadChain<A_WEIGHTING_SECTIONS> chain = [] {
+            BiquadChain<A_WEIGHTING_SECTIONS> c{};
+            load_48k_chain(c);
+            return c;
+        }();
+        const float g = gain_48k_a();
         chain.reset();
         for (size_t i = 0; i < count; ++i) {
-            data[i] = chain.process(data[i]);
+            data[i] = chain.process(data[i]) * g;
         }
     } else {
         // Fallback for non-48kHz: use runtime-designed SOS filters
-        auto sos = filter_design::a_weighting_design(sample_rate);
+        float g = 1.0f;
+        auto sos = filter_design::a_weighting_design(sample_rate, &g);
         for (const auto& coef : sos) {
             BiquadFilter f(coef);
             for (size_t i = 0; i < count; ++i) {
                 data[i] = f.process(data[i]);
             }
         }
+        for (size_t i = 0; i < count; ++i) { data[i] *= g; }
     }
 }
 
 // Streaming C-weighting: filter samples in-place (zero heap allocation)
 void apply_c_weighting_inplace(float* data, size_t count, float sample_rate) {
     if (sample_rate == 48000.0f) {
-        static BiquadChain<C_WEIGHTING_SECTIONS> chain = C_WEIGHTING_48K;
+        static BiquadChain<C_WEIGHTING_SECTIONS> chain = [] {
+            BiquadChain<C_WEIGHTING_SECTIONS> c{};
+            load_48k_chain(c);
+            return c;
+        }();
+        const float g = gain_48k_c();
         chain.reset();
         for (size_t i = 0; i < count; ++i) {
-            data[i] = chain.process(data[i]);
+            data[i] = chain.process(data[i]) * g;
         }
     } else {
-        auto sos = filter_design::c_weighting_design(sample_rate);
+        float g = 1.0f;
+        auto sos = filter_design::c_weighting_design(sample_rate, &g);
         for (const auto& coef : sos) {
             BiquadFilter f(coef);
             for (size_t i = 0; i < count; ++i) {
                 data[i] = f.process(data[i]);
             }
         }
+        for (size_t i = 0; i < count; ++i) { data[i] *= g; }
     }
 }
 

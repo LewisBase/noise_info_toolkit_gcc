@@ -77,7 +77,8 @@ static constexpr WeightingTableEntry WEIGHTING_TABLE[1] = {
  *
  * 调用方对 nullptr 的处理（保持既有行为，未改动）：
  *   - src/noise_processor.cpp：回落到运行时设计 filter_design::a/c_weighting_design()
- *   - src/event_detector.cpp ：回落到 A_WEIGHTING_48K 常量表
+ *   - src/event_detector.cpp ：默认填 48 kHz 表；非 48 kHz 时沿用该表
+ *     （v3.3.4 起 A_WEIGHTING_48K 副本已删除，统一走本表）
  */
 static constexpr const WeightingTableEntry* find_weighting_entry(int sample_rate) {
     return (sample_rate == 48000) ? &WEIGHTING_TABLE[0] : nullptr;

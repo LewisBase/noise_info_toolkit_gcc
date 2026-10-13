@@ -351,10 +351,9 @@ noise_info_toolkit_gcc/
 │   ├── dose_calculator.hpp            # 剂量计算器（静态方法，constexpr 表，float）
 │   ├── signal_utils.hpp               # 信号处理工具（含流式 weighting 接口）
 │   ├── iir_filter.hpp                 # IIR 滤波器设计（含 process_sample 流式接口）
-│   ├── filter_coefficients_48k.hpp    # 预计算 A/C 计权系数（48kHz，v3.2.1 + v3.3.0 两套）
+│   ├── filter_coefficients_48k.hpp    # BiquadChain 模板 + A/C 计权段数常量（系数见下方 weighting 表）
 │   ├── bandpass_coefficients_48k.hpp  # 预计算 1/3 倍频程带通系数（48kHz）
 │   ├── weighting_coefficients_multirate.hpp    # A/C 加权预存表（v3.3.4，仅 48 kHz，Class 1）
-│   ├── weighting_coefficients_matched_z_48k.hpp # 【已废弃】早期 matched-z 版本，未被引用
 │   ├── math_constants.hpp             # 数学常量（PI_F, TWO_PI_F）
 │   ├── event_detector.hpp             # 事件检测器（接口三）
 │   └── noise_toolkit.hpp              # 主入口
@@ -447,6 +446,15 @@ noise_info_toolkit_gcc/
 故 LCeq < LAeq 才是正确结果（IEC 解析理论 LCeq 85.860 / LAeq 87.278，与实测 85.88 / 87.28
 吻合到 0.02 dB）。该断言此前「通过」仅因 C 计权的 bug 抬高了高频。现改为：粉红噪声
 （真实环境噪声形态）断言 LCeq ≥ LAeq，白噪声断言两种计权均 ≤ LZeq。
+
+**重复系数副本清理**：
+- 删除 `include/filter_coefficients_48k.hpp` 内嵌的 `A_WEIGHTING_48K` / `C_WEIGHTING_48K`
+  两份 48 kHz 系数副本 —— 与 `WEIGHTING_TABLE` 重复，且 A 副本为**未归一化**形式。
+  这导致 `src/signal_utils.cpp` 的 A 计权路径漏乘 1 kHz 增益（偏高 **+2.43 dB**），
+  `src/event_detector.cpp` 的非 48 kHz 回落路径同样偏高。现全部调用点统一改用
+  `WEIGHTING_TABLE`（系数与增益成对提供），该文件只保留 `BiquadChain` 模板与段数常量。
+- 删除废弃文件 `include/weighting_coefficients_matched_z_48k.hpp`（无任何引用，
+  且引用了未定义的 `WeightingCoeffs`，包含它无法编译）。
 
 **测试结果**：全量 9/9 通过。
 
