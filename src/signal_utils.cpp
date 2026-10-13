@@ -81,6 +81,53 @@ inline void load_48k_chain(BiquadChain<C_WEIGHTING_SECTIONS>& chain) {
 inline float gain_48k_a() { const auto* e = find_weighting_entry(48000); return e ? e->a_gain : 1.0f; }
 inline float gain_48k_c() { const auto* e = find_weighting_entry(48000); return e ? e->c_gain : 1.0f; }
 
+// ---------------------------------------------------------------------------
+// v3.3.4：constexpr 构造 48 kHz 计权链。
+// 为什么不用「lambda 初始化函数内 static」：那种写法属于【动态初始化】，
+// C++11 起需要线程安全静态初始化，会引入 __cxa_guard_acquire/release 与
+// guard 变量（实测已确认）。本项目面向无线程嵌入式环境，不应引入这类运行时依赖。
+// 用 constexpr 构造 → 【常量初始化】→ 直接进 .rodata，无守卫、无运行时代码，
+// 与原先的 A_WEIGHTING_48K 常量表写法等价。
+// ---------------------------------------------------------------------------
+constexpr BiquadChain<A_WEIGHTING_SECTIONS> make_48k_a_chain() {
+    BiquadChain<A_WEIGHTING_SECTIONS> c{};
+    for (size_t i = 0; i < A_WEIGHTING_SECTIONS; ++i) {
+        c.sections[i] = BiquadCoefficients{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+    }
+    if (const auto* e = find_weighting_entry(48000)) {
+        for (int i = 0; i < e->a_count && i < static_cast<int>(A_WEIGHTING_SECTIONS); ++i) {
+            c.sections[i].b0 = e->a[i].b0;
+            c.sections[i].b1 = e->a[i].b1;
+            c.sections[i].b2 = e->a[i].b2;
+            c.sections[i].a0 = 1.0f;
+            c.sections[i].a1 = e->a[i].a1;
+            c.sections[i].a2 = e->a[i].a2;
+        }
+    }
+    return c;
+}
+
+constexpr BiquadChain<C_WEIGHTING_SECTIONS> make_48k_c_chain() {
+    BiquadChain<C_WEIGHTING_SECTIONS> c{};
+    for (size_t i = 0; i < C_WEIGHTING_SECTIONS; ++i) {
+        c.sections[i] = BiquadCoefficients{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+    }
+    if (const auto* e = find_weighting_entry(48000)) {
+        for (int i = 0; i < e->c_count && i < static_cast<int>(C_WEIGHTING_SECTIONS); ++i) {
+            c.sections[i].b0 = e->c[i].b0;
+            c.sections[i].b1 = e->c[i].b1;
+            c.sections[i].b2 = e->c[i].b2;
+            c.sections[i].a0 = 1.0f;
+            c.sections[i].a1 = e->c[i].a1;
+            c.sections[i].a2 = e->c[i].a2;
+        }
+    }
+    return c;
+}
+
+static constexpr BiquadChain<A_WEIGHTING_SECTIONS> A_CHAIN_48K = make_48k_a_chain();
+static constexpr BiquadChain<C_WEIGHTING_SECTIONS> C_CHAIN_48K = make_48k_c_chain();
+
 // WeightedSignalProcessor class to manage SOS filters
 class WeightedSignalProcessor {
 public:
@@ -191,11 +238,8 @@ std::vector<float> apply_c_weighting(const std::vector<float>& signal, float sam
 // Streaming A-weighting: filter samples in-place (zero heap allocation)
 void apply_a_weighting_inplace(float* data, size_t count, float sample_rate) {
     if (sample_rate == 48000.0f) {
-        static BiquadChain<A_WEIGHTING_SECTIONS> chain = [] {
-            BiquadChain<A_WEIGHTING_SECTIONS> c{};
-            load_48k_chain(c);
-            return c;
-        }();
+        // 从 constexpr 主副本拷贝 → 常量初始化，不引入 __cxa_guard 守卫
+        static BiquadChain<A_WEIGHTING_SECTIONS> chain = A_CHAIN_48K;
         const float g = gain_48k_a();
         chain.reset();
         for (size_t i = 0; i < count; ++i) {
@@ -218,11 +262,8 @@ void apply_a_weighting_inplace(float* data, size_t count, float sample_rate) {
 // Streaming C-weighting: filter samples in-place (zero heap allocation)
 void apply_c_weighting_inplace(float* data, size_t count, float sample_rate) {
     if (sample_rate == 48000.0f) {
-        static BiquadChain<C_WEIGHTING_SECTIONS> chain = [] {
-            BiquadChain<C_WEIGHTING_SECTIONS> c{};
-            load_48k_chain(c);
-            return c;
-        }();
+        // 从 constexpr 主副本拷贝 → 常量初始化，不引入 __cxa_guard 守卫
+        static BiquadChain<C_WEIGHTING_SECTIONS> chain = C_CHAIN_48K;
         const float g = gain_48k_c();
         chain.reset();
         for (size_t i = 0; i < count; ++i) {
