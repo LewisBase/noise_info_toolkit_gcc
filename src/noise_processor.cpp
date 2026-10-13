@@ -156,8 +156,9 @@ SecondMetrics NoiseProcessor::process_segment(const float* buffer_start,
     // Phase 2: A/C weighting — streaming in-place (zero heap alloc)
     // ---------------------------------------------------------------
     // v3.3.2: 滤波器状态跨 process_segment() 调用持续保留（不重置）。
-    // 原因：A 计权段 2（20.6 Hz 双极点）建立时间约 7.7 s。若每段（默认 10 ms～1 s）
-    // 都重置，滤波器永远来不及进入稳态，导致 20/25 Hz 低频 LAeq 虚高（PE-04 频段 +25 dB 偏差）。
+    // 原因：A 计权段 2（20.6 Hz 双极点）时间常数 tau = 1/((1-|p|)*fs) ≈ 7.7 ms，
+    // 约 50 ms 才能收敛到稳态。若每 10 ms 段都重置状态，滤波器永远来不及收敛，
+    // 导致 20/25 Hz 低频 LAeq 虚高（PE-04 频段偏差可达数十 dB）。
     // 商用 Class 1 声级计的滤波器状态也是连续运行的（开机后不重置）。
     // 若需要重新开始一段独立测量，显式调用 NoiseProcessor::reset()。
     //

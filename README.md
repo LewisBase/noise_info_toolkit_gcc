@@ -224,7 +224,7 @@ cd build_test
 ctest                            # 运行全部 9 个测试套件
 ./test_noise_processor           # 噪声指标单元测试（12个测试）
 ./test_event_detector            # 事件检测单元测试（14个测试）
-./test_class1_precision          # Class 1 A/C 加权精度测试（v3.3.4，48 kHz，33 个 1/3 倍频程频点）
+./test_class1_precision          # Class 1 A/C 加权精度测试（v3.3.4，48 kHz，34 个 1/3 倍频程频点）
 ./test_end_to_end                # 端到端验证：合成信号 LAeq/LCeq/Dose
 ./noise_toolkit_example          # 三接口演示与手动验证（含 EventDetector 联调）
 ./dose_validator                 # 剂量计算理论值验证
@@ -423,7 +423,7 @@ noise_info_toolkit_gcc/
 - **修正第二份 C 系数副本**：`include/filter_coefficients_48k.hpp` 的 `C_WEIGHTING_48K`
   是同一套旧缺陷系数（8 kHz 同样给出 −1.09 dB），已一并更新。
 
-**结果**（48 kHz，33 个 IEC 1/3 倍频程频点）：
+**结果**（48 kHz，34 个 IEC 1/3 倍频程频点）：
 
 | 计权 | 修复前 max|Δ| | 修复后 max|Δ| | 判定 |
 |------|---------------|---------------|------|
@@ -457,6 +457,17 @@ noise_info_toolkit_gcc/
   且引用了未定义的 `WeightingCoeffs`，包含它无法编译）。
 
 **测试结果**：全量 9/9 通过。
+
+**最终验收（2026-10-13，详见 `results/v3.3.4/VALIDATION_v3.3.4.md`）**：
+
+- **纯音 × 时间窗口**：34 个 IEC 1/3 倍频程频点 × {10 ms, 100 ms, 1 s}
+  → A max **0.484 dB**、C max **0.150 dB**；**全格 ≤ ±0.5 dB**，三种窗长结果一致
+  → **短时间窗口偏差已不存在**（机理：v3.3.2 起滤波器状态跳段连续保留，不再逐段重置）
+- **20261010 真实录音 vs 设备 CSV**（2 个文件，共 10350 秒）：
+  - 时间轴严格对齐（偏移 0 s）；LZeq 恒定偏移 −0.549 dB（std **0.003**）= 纯标定常数
+  - 扣除标定后：A 计权 **+0.05 dB**、C 计权 **−0.21 / −0.14 dB**；99.3% / 99.8% 的秒 ≤ 1 dB
+  - C 计权仅 0.73% / 0.16% 的秒偏差 > 2 dB，全部落在 > 20 kHz 能量占 80–93% 的秒
+    （相关系数 r = +0.951）；**20 kHz 以上不在处理范围**，标称范围内与设备一致
 
 ### v3.3.3 (2026-09-20) — 基于 LAF/LAS 的多维度事件检测
 
@@ -580,7 +591,7 @@ test_event_detector_v3.3.3:  22 passed, 0 failed
 **Bug 修复**：PE-04 频段 20/25 Hz 低频 A 计权偏差（+25 dB）。
 
 **根因**：
-- A 计权段 2（20.6 Hz 双极点，|p|=0.9973）建立时间约 **7.7 s**
+- A 计权段 2（20.6 Hz 双极点，|p|=0.9973）时间常数 τ ≈ **7.7 ms**（约 50 ms 收敛）
 - 固件每 10 ms 报一个 LAeq 子累计再做能量平均 → 等效 **10 ms 积分窗口**
 - 滤波器在 10 ms 内完全来不及进入稳态，RMS 捕获的是未衰减的瞬态信号
 - 现象：20 Hz @ 94 dB SPL 时 LAeq 虚高 +25 dB（67.5 dBA vs IEC 42.4 dBA）
@@ -604,7 +615,7 @@ state = α · state + (1 − α) · y²
 
 - 删除 `process_segment()` 中每段的 `a_weight_chain_.reset()` / `c_weight_chain_.reset()`
 - 新增 `NoiseProcessor::reset()` 供手动重新开始测量使用
-- 原因：每段重置导致滤波器永远只有 1 s 建立时间，对 20 Hz（需 7.7 s）远远不够
+- 原因：每段重置导致滤波器永远处于瞬态；10 ms 段仅 1.3 个时间常数（τ≈7.7 ms），来不及收敛
 - 与商用 Class 1 声级计行为一致（开机后滤波器状态连续运行）
 
 **验证结果**：
@@ -686,13 +697,13 @@ state = α · state + (1 − α) · y²
 **技术路线**：matched-z 变换 + 2nd-order peaking EQ 修正
 - `include/weighting_coefficients_matched_z_48k.hpp`：新 header，4 段 A 加权 biquad + 3 段 C 加权 biquad
   - Stage 1: matched-z 变换（`z_p = exp(s_p·T)`，极点频率精确无 warping）
-  - Stage 2: 2nd-order RBJ peaking EQ（differential evolution 全局优化，代价函数 = 33 个 IEC 标准频率的最大绝对误差）
-- `tools/regen_weighting_matched_z.py`：Python 设计脚本，输出 C++ constexpr 系数 + 全 33 频率验证表
+  - Stage 2: 2nd-order RBJ peaking EQ（differential evolution 全局优化，代价函数 = 34 个 IEC 标准频率的最大绝对误差）
+- `tools/regen_weighting_matched_z.py`：Python 设计脚本，输出 C++ constexpr 系数 + 全 34 频率验证表（v3.3.4 起已合并进 `tools/regen_weighting_coefficients.py`）
 - A-weighting max error = **0.49 dB** (Class 1 容差 ±0.7)；C-weighting max error = **0.18 dB**
 - v3.2.1 bilinear 预存表同时保留（Class 2 工业级，3 段 biquad），用户按需选择
 
 **新测试套件**：
-- `tests/test_class1_precision.cpp`：扫 33 个 IEC 1/3 倍频程频率，对比 A/C 权加权误差（验证 Class 1 ±0.7 dB）
+- `tests/test_class1_precision.cpp`：扫 34 个 IEC 1/3 倍频程频率，对比 A/C 权加权误差（验证 Class 1 ±0.7 dB）
 - `tests/test_end_to_end.cpp`：9 个端到端验证，合成已知信号检查 LAeq / LCeq / LZeq / Dose 是否物理正确
   - 1 kHz 94 dB 纯音 → LAeq=LCeq=LZeq=94.00 dB ✓
   - NIOSH dose 90 dB × 10s → 0.1102%（与公式严格自洽）✓

@@ -13,7 +13,7 @@
  * than the filter's settling time, causing apparent errors of 1-3 dB.
  *
  * The STEADY-STATE precision (verified by scipy.signal.sosfreqz in the design
- * tool) is within Class 1 at all 33 frequencies, including 10/12.5/16 Hz.
+ * tool) is within Class 1 at all 34 frequencies, including 10/12.5/16 Hz.
  * Pure-tone testing at sub-20 Hz frequencies is not the typical IEC 61672
  * verification method (the standard uses electrical signals with calibration
  * tones that the filter is designed to settle into).
@@ -137,7 +137,7 @@ int main() {
     }
 
     std::cout << "\n==========================================\n";
-    std::cout << "  SUMMARY (fs=48000, 33 frequencies):\n";
+    std::cout << "  SUMMARY (fs=48000, 34 frequencies):\n";
     std::cout << "  A-weighting max error: " << max_a_err << " dB"
               << " at " << TEST_FREQS[worst_a_idx] << " Hz\n";
     std::cout << "  C-weighting max error: " << max_c_err << " dB"

@@ -298,7 +298,7 @@ DOC = '''/**
  * 增益归一化（a_gain / c_gain）是**独立因子**，在 biquad 链**之后**一次性相乘。
  * （v3.2 曾把 1/H_total(1kHz) 只乘到第一节 b，破坏高频响应形状——勿回退该做法。）
  *
- * 设计目标：IEC 61672-1 Class 1（频响误差 <= 0.7 dB，33 个 1/3 倍频程频点）
+ * 设计目标：IEC 61672-1 Class 1（频响误差 <= 0.7 dB，34 个 1/3 倍频程频点）
  * 验证工具：tests/test_class1_precision.cpp
  */
 #pragma once
@@ -332,11 +332,11 @@ def main():
         chunks.append(emit(
             f"A_{fs}", sa,
             f"// A 计权 @ 48 kHz —— {sa.shape[0]} 段（第 4 段为 2 阶 RBJ 峰化修正）\n"
-            f"// max|Δ| = {ma:.3f} dB @ {fa[ia]} Hz（vs IEC 61672-1 参考表，33 频点）"))
+            f"// max|Δ| = {ma:.3f} dB @ {fa[ia]} Hz（vs IEC 61672-1 参考表，34 频点）"))
         chunks.append(emit(
             f"C_{fs}", sc,
             f"// C 计权 @ 48 kHz —— {sc.shape[0]} 段（复极点最小二乘，零点锁定 z=1）\n"
-            f"// max|Δ| = {mc:.3f} dB @ {fc[ic]} Hz（vs IEC 61672-1 参考表，33 频点）"))
+            f"// max|Δ| = {mc:.3f} dB @ {fc[ic]} Hz（vs IEC 61672-1 参考表，34 频点）"))
         table.append(f"    {{ A_{fs}, {len(sa)}, {ga:.10e}f, C_{fs}, {len(sc)}, {gc:.10e}f }},")
 
     tail = ("\n\n// 仅 48 kHz 一项（v3.3.4 起；其余采样率已移除，见文件头说明）\n"
