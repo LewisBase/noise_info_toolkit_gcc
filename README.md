@@ -1,6 +1,6 @@
 # noise_info_toolkit_gcc
 
-C++ 实现的轻量级噪声信息计算工具包（**v3.3.3** — 基于 LAF/LAS 的多维度事件检测 + 指数时间计权，IEC Class 1 实验级精度），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
+C++ 实现的轻量级噪声信息计算工具包（**v3.3.4** — C 计权高频偏差修复，仅 48 kHz；基于 LAF/LAS 的多维度事件检测 + 指数时间计权，IEC 61672-1 Class 1 实验级精度），从 Python 项目 [noise_info_toolkit](https://github.com/LewisBase/noise_info_toolkit) 移植而来。
 
 ## 设计目标
 
@@ -221,10 +221,10 @@ make -j$(nproc)
 
 ```bash
 cd build_test
-ctest                            # 运行全部 7 个测试套件
+ctest                            # 运行全部 9 个测试套件
 ./test_noise_processor           # 噪声指标单元测试（12个测试）
 ./test_event_detector            # 事件检测单元测试（14个测试）
-./test_class1_precision          # Class 1 A/C 加权精度测试（v3.3.0）
+./test_class1_precision          # Class 1 A/C 加权精度测试（v3.3.4，48 kHz，33 个 1/3 倍频程频点）
 ./test_end_to_end                # 端到端验证：合成信号 LAeq/LCeq/Dose
 ./noise_toolkit_example          # 三接口演示与手动验证（含 EventDetector 联调）
 ./dose_validator                 # 剂量计算理论值验证
@@ -255,22 +255,18 @@ A/C 加权滤波器的频率响应精度按照 **IEC 61672-1** 国际标准分�
 
 > ⚠️ **重要**：两种等级使用的是**同一条 A/C 加权曲线**（1 kHz = 0 dB、100 Hz = -19.1 dB、10 kHz = -2.5 dB），区别仅在于测量设备对理想曲线的**复现精度**。
 
-**本项目提供两套滤波系数**，分别满足不同精度需求：
+**本项目当前滤波系数（v3.3.4，仅 48 kHz）**：
 
-| 版本 | 变换方法 | A-weighting 最大误差 | C-weighting 最大误差 | 等级 | biquad 段数 |
-|------|----------|---------------------|---------------------|------|-------------|
-| v3.2.1 | plain bilinear | 1.3 dB | >2 dB | Class 2 | 3 / 2 |
-| v3.3.0 | matched-z + peaking EQ | **0.49 dB** | **0.18 dB** | **Class 1** ✅ | 4 / 3 |
+| 计权 | 设计方法 | 最大频响误差 | 等级 | biquad 段数 |
+|------|----------|-------------|------|-------------|
+| A | matched-z 极点精确映射 + 2 阶 RBJ 峰化修正 | **0.483 dB**（@ 20 kHz） | **Class 1** ✅ | 4 |
+| C | 复极点最小二乘拟合（零点锁定 z=1） | **0.158 dB**（@ 16 Hz） | **Class 1** ✅ | 3 |
 
-**v3.3.0 的实验级精度实现**：
-- 采用**极点-零点匹配变换 (matched-z)**：每个模拟极点按 `z_p = exp(s_p · T)` 直接映射，频率位置**精确无畸变**（无 bilinear warping）
-- 增益形状由 **2nd-order peaking EQ** 修正（differential evolution 全局优化，代价函数为 33 个 IEC 标准频率的最大绝对误差）
-- 1 kHz 归一化 gain factor 独立于 biquad 系数（与 v3.2.1 相同的 post-chain 架构）
-- 详见 `include/weighting_coefficients_matched_z_48k.hpp` 和 `tools/regen_weighting_matched_z.py`
-
-**选型建议**：
-- 工业噪声监测 / 职业暴露合规 → **v3.2.1 bilinear**（3 段 biquad，性能稳定，Class 2 合规）
-- 实验室级精密研究 / 听力防护标准验证 → **v3.3.0 matched-z**（4 段 biquad，**Class 1 实验级精度**）
+- **A 计权**：采用**极点-零点匹配变换 (matched-z)** —— 每个模拟极点按 `z_p = exp(s_p · T)` 直接映射，频率位置**精确无畸变**（无 bilinear warping）；残余形状误差由一节 **2 阶 RBJ 峰化 EQ** 修正。
+- **C 计权**（v3.3.4 起）：改用**复极点最小二乘拟合**（`scipy.optimize.least_squares`，多起点，零点固定为 2 个 z=1、极点自由）。旧的 matched-z + 单搁架在修正后的（更陡的）曲线上只能做到 1.220 dB（12.5 kHz），不满足 Class 1。
+- 1 kHz 归一化 gain factor（A: `0.75534559768`，C: `0.50568657745`）是**独立因子**，在 biquad 链**之后**一次性相乘（v3.2 曾把它烘进第一节 `b`，破坏高频响应形状——勿回退）。
+- **仅支持 48 kHz**：本设备固定 48 kHz 运行；其余档位（8k/16k/22.05k/32k/44.1k/96k）已于 v3.3.4 移除，详见 `include/weighting_coefficients_multirate.hpp` 文件头说明。
+- 生成器：`tools/regen_weighting_coefficients.py`
 
 ## 指标列表（87个每秒指标 — v3.3.3+LCF/LCS/事件）
 
@@ -357,8 +353,8 @@ noise_info_toolkit_gcc/
 │   ├── iir_filter.hpp                 # IIR 滤波器设计（含 process_sample 流式接口）
 │   ├── filter_coefficients_48k.hpp    # 预计算 A/C 计权系数（48kHz，v3.2.1 + v3.3.0 两套）
 │   ├── bandpass_coefficients_48k.hpp  # 预计算 1/3 倍频程带通系数（48kHz）
-│   ├── weighting_coefficients_multirate.hpp    # 7 采样率 A/C 加权预存表（v3.2.1，Class 2）
-│   ├── weighting_coefficients_matched_z_48k.hpp # Matched-z A/C 加权（v3.3.0，Class 1）🆕
+│   ├── weighting_coefficients_multirate.hpp    # A/C 加权预存表（v3.3.4，仅 48 kHz，Class 1）
+│   ├── weighting_coefficients_matched_z_48k.hpp # 【已废弃】早期 matched-z 版本，未被引用
 │   ├── math_constants.hpp             # 数学常量（PI_F, TWO_PI_F）
 │   ├── event_detector.hpp             # 事件检测器（接口三）
 │   └── noise_toolkit.hpp              # 主入口
@@ -371,8 +367,7 @@ noise_info_toolkit_gcc/
 ├── tools/
 │   ├── generate_bandpass_coeffs.cpp   # bandpass 系数生成工具（v3.3.0 旧版，已弃用）
 │   ├── regen_bandpass_coefficients.py    # v3.3.1 scipy 重生成 1/3 oct 带通系数 🆕
-│   ├── regen_weighting_coefficients.py    # v3.2.1 bilinear 7 采样率系数重生成脚本
-│   └── regen_weighting_matched_z.py       # v3.3.0 matched-z 系数设计脚本
+│   └── regen_weighting_coefficients.py    # A/C 加权系数生成器（v3.3.4，仅 48 kHz）
 ├── tests/
 │   ├── test_noise_processor.cpp       # 噪声指标单元测试（12 个测试）
 │   ├── test_event_detector.cpp       # 事件检测单元测试（14 个测试）
@@ -407,6 +402,53 @@ noise_info_toolkit_gcc/
 待定 / 请参考原 Python 项目许可证
 
 ## 变更记录
+
+### v3.3.4 (2026-10-13) — C 计权高频偏差修复 + 采样率范围收敛至 48 kHz
+
+**问题**：硬件实测 C 计权在高频偏高 —— 8 kHz 处实测 −1.09 dB（IEC 应为 −3.0 dB），
+偏高约 **+2.0 dB**，与实验室独立测量结果一致。
+
+**根因**（两步）：
+1. 系数生成脚本内嵌的 C 计权高频参照值有误（8 kHz 写作 −1.1、12.5 kHz −2.3、
+   16 kHz −3.3、20 kHz −4.4；官方值分别为 −3.0 / −6.2 / −8.5 / −11.2 等）。
+2. 生成脚本按错误的参照曲线优化滤波器 → 系数忠实复现了错误的频响。
+
+**修复**：
+- 更正全部 C 计权高频参照值为 IEC 61672-1 官方值（已用多份公开标准表 + 商用
+  Class 1 声级计校准证书交叉验证）
+- C 计权改用**复极点最小二乘拟合**重新设计（3 段 biquad，零点锁定 z=1、极点自由）
+- 1 kHz 归一化增益同步修正（0.99776 → 0.50569）
+- **修正生成器 A 段优化器的代价函数**：原代价在「未归一化形状」上寻优，与最终判据
+  口径不一致，会选出形状更差但代价更小的解（曾把 48 kHz 的 A 计权从 0.487 dB 劣化
+  到 3.817 dB）。修正后 A 进一步改善至 0.483 dB。
+- **修正第二份 C 系数副本**：`include/filter_coefficients_48k.hpp` 的 `C_WEIGHTING_48K`
+  是同一套旧缺陷系数（8 kHz 同样给出 −1.09 dB），已一并更新。
+
+**结果**（48 kHz，33 个 IEC 1/3 倍频程频点）：
+
+| 计权 | 修复前 max|Δ| | 修复后 max|Δ| | 判定 |
+|------|---------------|---------------|------|
+| A | 0.487 dB | **0.483 dB** | ✅ Class 1 |
+| C | **1.220 dB**（12.5 kHz） | **0.158 dB**（16 Hz） | ✅ Class 1 |
+
+修复前 C 计权在 8/10/12.5/16 kHz 四个频点超标，硬件实测偏高 +2.0 dB 与此完全吻合。
+实机 `test_class1_precision`（20 Hz–20 kHz）A max 0.498 dB、C max 0.150 dB。
+
+**采样率范围收敛**：`include/weighting_coefficients_multirate.hpp` 由 7 档
+（8k/16k/22.05k/32k/44.1k/48k/96k）**收敛为仅 48 kHz**。本设备固定以 48 kHz 运行，
+其余档位从未启用；复核发现除 48 kHz 外，其余档位的 A 计权误差为 0.89–2.25 dB
+（低频 30–125 Hz 段，未达标），故一律移除并在文件头注释说明，避免「表里有值即视为可用」。
+
+**生成器合并**：`tools/regen_weighting_matched_z.py` 与 `tools/regen_weighting_coefficients.py`
+合并为单一 48 kHz 生成器（A 用 matched-z + 峰化、C 用最小二乘），前者已删除。
+
+**测试修正**：`test_end_to_end` Test 4 原断言「白噪声下 LCeq ≥ LAeq」**物理上不成立** ——
+白噪声能量集中于高频，而 C 计权在高频衰减比 A 更陡（C(10 kHz)=−4.4 dB vs A(10 kHz)=−2.5 dB），
+故 LCeq < LAeq 才是正确结果（IEC 解析理论 LCeq 85.860 / LAeq 87.278，与实测 85.88 / 87.28
+吻合到 0.02 dB）。该断言此前「通过」仅因 C 计权的 bug 抬高了高频。现改为：粉红噪声
+（真实环境噪声形态）断言 LCeq ≥ LAeq，白噪声断言两种计权均 ≤ LZeq。
+
+**测试结果**：全量 9/9 通过。
 
 ### v3.3.3 (2026-09-20) — 基于 LAF/LAS 的多维度事件检测
 

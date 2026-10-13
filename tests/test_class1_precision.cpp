@@ -60,9 +60,9 @@ const std::vector<float> C_REF_DB = {
     -14.3f, -11.2f, -8.5f, -6.2f, -4.4f, -3.0f,
     -2.0f, -1.3f, -0.8f, -0.5f, -0.3f, -0.2f,
     -0.1f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
-    -0.1f, -0.2f, -0.3f, -0.5f, -0.8f, -1.1f,
-    -1.6f, -2.3f, -3.3f, -4.4f
+    0.0f, 0.0f, 0.0f, 0.0f, -0.1f, -0.2f,
+    -0.3f, -0.5f, -0.8f, -1.3f, -2.0f, -3.0f,
+    -4.4f, -6.2f, -8.5f, -11.2f
 };
 
 // Pure-tone generator. Duration scales inversely with frequency: ~30 cycles per test

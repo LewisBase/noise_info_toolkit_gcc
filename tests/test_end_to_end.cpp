@@ -6,7 +6,14 @@
  *  1. 1 kHz pure tone at 94 dB SPL: LAeq ≈ 94, LCeq ≈ 94, LZeq ≈ 94
  *  2. 1 kHz pure tone at 90 dB SPL × 60s: NIOSH dose ≈ 0.66%
  *  3. White noise at 85 dB SPL × 8h: NIOSH dose ≈ 100%
- *  4. C-weighting parity: LCeq ≥ LAeq for broadband noise
+ *  4. C-weighting parity (v3.3.4 corrected):
+ *       pink noise  -> LCeq >= LAeq  (C attenuates less than A; realistic case)
+ *       white noise -> both LAeq and LCeq must be <= LZeq
+ *     NOTE: for FULL-BAND WHITE noise, LCeq < LAeq is the CORRECT result, because
+ *     C rolls off above ~1 kHz more steeply than A (C(10k)=-4.4 vs A(10k)=-2.5)
+ *     and white noise puts most of its energy at high frequencies. The previous
+ *     "LCeq >= LAeq for white noise" assertion only passed because of the v3.3.3
+ *     C-weighting bug (HF response ~2 dB too high).
  */
 
 #include <iostream>
@@ -43,6 +50,35 @@ std::vector<float> white_noise(float spl_db, float dur_s) {
     std::mt19937 gen(42);
     std::normal_distribution<float> dis(0.f, rms);
     for (size_t i = 0; i < n; ++i) data[i] = dis(gen);
+    return data;
+}
+
+// Pink noise (1/f power spectrum) — Paul Kellett's 7-pole approximation.
+// Real environmental/occupational noise is low-frequency-dominant (~pink), which
+// is the case where C-weighting is expected to attenuate LESS than A-weighting,
+// i.e. LCeq >= LAeq. Output is normalized to the requested overall SPL.
+std::vector<float> pink_noise(float spl_db, float dur_s) {
+    size_t n = static_cast<size_t>(FS * dur_s);
+    std::vector<float> data(n);
+    std::mt19937 gen(1234);
+    std::normal_distribution<float> dis(0.f, 1.f);
+    float b0 = 0.f, b1 = 0.f, b2 = 0.f, b3 = 0.f, b4 = 0.f, b5 = 0.f, b6 = 0.f;
+    for (size_t i = 0; i < n; ++i) {
+        float w = dis(gen);
+        b0 = 0.99886f * b0 + w * 0.0555179f;
+        b1 = 0.99332f * b1 + w * 0.0750759f;
+        b2 = 0.96900f * b2 + w * 0.1538520f;
+        b3 = 0.86650f * b3 + w * 0.3104856f;
+        b4 = 0.55000f * b4 + w * 0.5329522f;
+        b5 = -0.7616f * b5 - w * 0.0168980f;
+        data[i] = b0 + b1 + b2 + b3 + b4 + b5 + b6 + w * 0.5362f;
+        b6 = w * 0.115926f;
+    }
+    double sum = 0.0;
+    for (float v : data) sum += static_cast<double>(v) * v;
+    float rms = static_cast<float>(std::sqrt(sum / static_cast<double>(n)));
+    float scale = (REF_PA * std::pow(10.f, spl_db / 20.f)) / rms;
+    for (float& v : data) v *= scale;
     return data;
 }
 
@@ -128,19 +164,31 @@ int main() {
         std::cout << "\n";
     }
 
-    // ===== Test 4: LCeq ≥ LAeq for broadband noise =====
+    // ===== Test 4: C- vs A-weighting parity =====
+    // (a) Pink noise (low-frequency-dominant, realistic): LCeq >= LAeq.
+    // (b) White noise (flat, HF-dominant): both weightings must attenuate vs Z.
     {
-        std::cout << "Test 4: LCeq ≥ LAeq (broadband noise)\n";
-        auto sig = white_noise(90.f, 3.f);
-        NoiseProcessor proc(FS);
-        auto m = proc.process_segment(sig.data(), sig.data() + sig.size(), 3.f);
+        std::cout << "Test 4: C- vs A-weighting parity\n";
 
-        bool ok = m.LCeq >= m.LAeq - 0.01f;  // tiny float tolerance
-        std::cout << "  " << (ok ? "✓" : "✗")
-                  << " LCeq ≥ LAeq: LCeq=" << std::fixed << std::setprecision(2) << m.LCeq
-                  << " dB, LAeq=" << m.LAeq << " dB, LZeq=" << m.LZeq << " dB"
-                  << (ok ? "" : "  ← FAIL") << "\n";
-        (ok ? pass : fail)++;
+        auto pink = pink_noise(90.f, 3.f);
+        NoiseProcessor proc_p(FS);
+        auto mp = proc_p.process_segment(pink.data(), pink.data() + pink.size(), 3.f);
+        bool ok_p = mp.LCeq >= mp.LAeq - 0.01f;  // tiny float tolerance
+        std::cout << "  " << (ok_p ? "✓" : "✗")
+                  << " pink  noise LCeq ≥ LAeq: LCeq=" << std::fixed << std::setprecision(2) << mp.LCeq
+                  << " dB, LAeq=" << mp.LAeq << " dB, LZeq=" << mp.LZeq << " dB"
+                  << (ok_p ? "" : "  ← FAIL") << "\n";
+        (ok_p ? pass : fail)++;
+
+        auto white = white_noise(90.f, 3.f);
+        NoiseProcessor proc_w(FS);
+        auto mw = proc_w.process_segment(white.data(), white.data() + white.size(), 3.f);
+        bool ok_w = (mw.LAeq <= mw.LZeq + 0.01f) && (mw.LCeq <= mw.LZeq + 0.01f);
+        std::cout << "  " << (ok_w ? "✓" : "✗")
+                  << " white noise LAeq,LCeq ≤ LZeq: LCeq=" << mw.LCeq
+                  << " dB, LAeq=" << mw.LAeq << " dB, LZeq=" << mw.LZeq << " dB"
+                  << (ok_w ? "" : "  ← FAIL") << "\n";
+        (ok_w ? pass : fail)++;
         std::cout << "\n";
     }
 

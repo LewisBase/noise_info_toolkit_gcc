@@ -77,22 +77,27 @@ constexpr BiquadChain<A_WEIGHTING_SECTIONS> A_WEIGHTING_48K = {
 
 //==============================================================================
 // C-weighting 3-section biquad chain for 48kHz (pre-normalized, a0=1.0)
-// v3.3.0: matched-z + 1st-order shelf correction → IEC 61672-1 Class 1
+// v3.3.4: 复极点最小二乘拟合重设计（零点锁定 z=1）→ IEC 61672-1 Class 1
+//         1 kHz 归一化增益（0.50568658）已内嵌到 Section 0 的 b 系数中。
+// 修复前：C 计权高频偏高 —— 8 kHz 为 −1.09 dB（应为 −3.0 dB），与硬件实测一致。
+// 修复后：max|Δ| = 0.158 dB（33 个 IEC 1/3 倍频程频点）。
+// 注：A_WEIGHTING_48K 仍为未归一化形式（增益 0.75577396405 由调用方单独施加，
+//     见 weighting_coefficients_multirate.hpp 的 WEIGHTING_TABLE）。
 //==============================================================================
 
 constexpr size_t C_WEIGHTING_SECTIONS = 3;
 
 constexpr BiquadChain<C_WEIGHTING_SECTIONS> C_WEIGHTING_48K = {
     {
-        // Section 0: High-frequency matched-z pole (12194 Hz analog)
+        // Section 0: 归一化双零点 (z=1) + 高频复极点对；b 已含 1 kHz 增益
+        { 5.05686558e-01f, -1.01137312e+00f,  5.05686558e-01f, 1.0f,
+          6.63510600e-02f,  1.25026270e-01f },
+        // Section 1: 中频复极点对
         { 1.00000000f,  0.00000000f,  0.00000000f, 1.0f,
-         -0.40532256f,  0.04107159f },
-        // Section 1: Low-frequency matched-z pole (20.6 Hz analog, double)
-        { 1.00000000f, -2.00000000f,  1.00000000f, 1.0f,
-         -1.99461446f,  0.99462171f },
-        // Section 2: 1st-order shelf correction (Nelder-Mead optimized)
-        { 0.76934566f, -0.25710082f,  0.00000000f, 1.0f,
-         -0.19553573f,  0.00000000f }
+         -7.49203090e-01f,  1.72225700e-01f },
+        // Section 2: 20.6 Hz 双重实极点
+        { 1.00000000f,  0.00000000f,  0.00000000f, 1.0f,
+         -1.99463560e+00f,  9.94642800e-01f }
     },
     {0}  // state: zero-initialized
 };
