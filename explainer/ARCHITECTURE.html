@@ -1,0 +1,2623 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>noise_info_toolkit_gcc — 架构与代码讲解</title>
+<style>
+  :root{--bg:#f7f9fb;--card:#fff;--text:#16212b;--muted:#5d6d7b;--border:#dbe3ea;
+    --accent:#0b6bcb;--accent-soft:#e9f2fd;--warn:#b45309;--warn-soft:#fff7e6;
+    --danger:#b42318;--danger-soft:#fdeeec;--ok:#046c4e;--ok-soft:#e8f7f1;--code-bg:#f6f8fa;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font:15px/1.72 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+  header{background:linear-gradient(135deg,#083a63,#0b6bcb);color:#fff;padding:26px 24px 22px}
+  header h1{margin:0 0 4px;font-size:22px}
+  header p{margin:0;opacity:.9;font-size:13.5px}
+  header .meta{margin-top:10px;font:12px var(--mono);opacity:.82}
+  .tabs{position:sticky;top:0;z-index:60;background:rgba(247,249,251,.97);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--border);padding:8px 16px;overflow-x:auto;white-space:nowrap}
+  .tabs .inner{max-width:1560px;margin:0 auto;display:flex;gap:3px}
+  .tabs button{font:12.5px/1 inherit;font-family:inherit;color:var(--muted);background:none;
+    border:1px solid transparent;padding:7px 10px;border-radius:7px;cursor:pointer;white-space:nowrap}
+  .tabs button:hover{background:var(--accent-soft);color:var(--accent)}
+  .tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .page{display:none;max-width:1560px;margin:0 auto;padding:26px 20px 70px}
+  .page.on{display:block}
+  h2{font-size:19px;margin:0 0 6px}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 16px}
+  h3{font-size:15px;margin:24px 0 8px;color:#22394d}
+  h3:first-of-type{margin-top:8px}
+  .diagram-wrap{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:8px 4px 2px;overflow-x:auto}
+  svg.arch{display:block;width:100%;min-width:1180px;height:auto}
+  .band{stroke:#e6edf3;stroke-width:1}
+  .band.c1{fill:#fcfdfe}.band.c2{fill:#f7fbff}.band.c3{fill:#f6fcf8}.band.c4{fill:#faf8fe}
+  .band.c5{fill:#fffdf5}.band.c6{fill:#fdf9f9}.band.c7{fill:#f8fafb}
+  .cap{font:600 11.5px var(--mono);fill:#7b8b99;letter-spacing:.35px}
+  .grp rect{fill:#fff;stroke:#cfdae3;stroke-width:1.4;transition:all .14s}
+  .grp .gt{font:600 11.5px var(--mono);fill:#16212b}
+  .grp .fn{font:9.5px var(--mono);fill:#6b7c8b}
+  .grp:hover rect{stroke:var(--accent);fill:var(--accent-soft);filter:drop-shadow(0 2px 6px rgba(11,107,203,.18))}
+  .grp:hover .gt{fill:var(--accent)}
+  .grp.hot rect{stroke:#e79a9a;fill:#fdf3f3}.grp.hot .gt{fill:#a5292b}
+  .grp.api rect{stroke:#7fb3e0;fill:#f2f9ff}.grp.api .gt{fill:#0a4f92}
+  .grp.tool rect{stroke:#bccbd6;fill:#fbfcfd;stroke-dasharray:4 3}
+  .arr{fill:none;stroke:#5f7c93;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+  .albl{font:9px var(--mono);fill:#6d8296}
+  .node-link{cursor:pointer}
+  pre{background:var(--code-bg);border:1px solid var(--border);border-left:3px solid var(--accent);
+    border-radius:7px;padding:12px 14px;overflow-x:auto;font:12px/1.55 var(--mono);margin:8px 0}
+  code{font-family:var(--mono);font-size:.93em;background:var(--code-bg);padding:1px 5px;border-radius:4px}
+  pre code{background:none;padding:0}
+  .csrc{display:flex;align-items:center;gap:8px;font:11px var(--mono);color:var(--muted);
+    background:#eef3f7;border:1px solid var(--border);border-bottom:none;
+    border-radius:7px 7px 0 0;padding:5px 11px;margin-top:10px}
+  .csrc code{background:#fff;font-size:10.5px;padding:1px 5px}
+  .csrc .cl{margin-left:auto;font-size:10px;color:#8b9aa8}
+  .csrc + pre{margin-top:0;border-radius:0 0 7px 7px}
+
+  /* ══ 逐段左右分栏：左讲解 / 右源码 ══ */
+  .seg{display:grid;grid-template-columns:360px minmax(0,1fr);gap:16px;
+    margin:16px 0;align-items:start}
+  .seg .ex{background:#f8fbfd;border:1px solid #e2ecf5;border-left:3px solid #7fb3e0;
+    border-radius:0 9px 9px 0;padding:11px 14px}
+  .seg .ex h4{margin:0 0 8px;font-size:13.5px;color:#0a4f92;line-height:1.45}
+  .seg .ex p{margin:0 0 7px;font-size:12.6px;line-height:1.72;color:#26333f}
+  .seg .ex p:last-child{margin-bottom:0}
+  .seg .ex ul{margin:3px 0 7px;padding-left:17px;font-size:12.6px;line-height:1.7}
+  .seg .ex li{margin:2px 0}
+  .seg .ex p.risk{background:#fdeeec;border-left:2px solid #b42318;
+    padding:6px 9px;border-radius:0 5px 5px 0}
+  .seg .ex p.key{background:#e8f7f1;border-left:2px solid #046c4e;
+    padding:6px 9px;border-radius:0 5px 5px 0}
+  .seg .ex p.tip{background:#e9f2fd;border-left:2px solid #0b6bcb;
+    padding:6px 9px;border-radius:0 5px 5px 0}
+  .seg .stag{display:inline-block;font:600 10px var(--mono);background:#0b6bcb;color:#fff;
+    padding:1px 6px;border-radius:4px;margin-right:7px;vertical-align:2px}
+  .seg .cd{min-width:0}
+  .seg .cd pre{margin:0;font-size:11.5px}
+  h4.blk{margin:22px 0 6px;font-size:13.5px;color:#22394d;
+    padding-bottom:5px;border-bottom:1px dashed var(--border)}
+  @media(max-width:1100px){.seg{grid-template-columns:1fr}}
+  .cmt{color:#7b8b99}.kw{color:#0a5aa4;font-weight:600}.str{color:#8a5a00}
+  .note,.warn,.danger,.ok{border-radius:8px;padding:11px 14px;margin:13px 0;font-size:13.5px}
+  .note{background:var(--accent-soft);border-left:3px solid var(--accent)}
+  .warn{background:var(--warn-soft);border-left:3px solid var(--warn)}
+  .danger{background:var(--danger-soft);border-left:3px solid var(--danger)}
+  .ok{background:var(--ok-soft);border-left:3px solid var(--ok)}
+  .note b,.warn b,.danger b,.ok b{display:block;margin-bottom:3px}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px}
+  th,td{border:1px solid var(--border);padding:6px 9px;text-align:left;vertical-align:top}
+  th{background:#eff4f8;font-size:12.5px}
+  tbody tr:hover{background:#fafcfd}
+  td.n{font-family:var(--mono);font-size:11.5px;color:var(--muted)}
+  .good{color:var(--ok);font-weight:600}.bad{color:var(--danger);font-weight:600}
+  .iface{display:inline-block;font:600 11px var(--mono);background:var(--accent);color:#fff;
+    padding:2px 7px;border-radius:5px;margin-right:7px;vertical-align:2px}
+  .pager{display:flex;justify-content:space-between;gap:12px;margin-top:34px;padding-top:16px;
+    border-top:1px solid var(--border)}
+  .pager button{font:13.5px inherit;font-family:inherit;background:#fff;border:1px solid var(--border);
+    color:var(--text);padding:9px 16px;border-radius:8px;cursor:pointer}
+  .pager button:hover{border-color:var(--accent);color:var(--accent)}
+  .hint{font-size:12.5px;color:var(--muted);margin-top:10px}
+  @media(max-width:760px){.page{padding:18px 12px 60px}header h1{font-size:18px}pre{font-size:11px}}
+</style>
+</head>
+<body>
+<header>
+  <h1>noise_info_toolkit_gcc — 架构与代码讲解</h1>
+  <p>4 个对外接口 · 7 层结构 · 2164 行源码逐段讲解 · <b>讲解与源码左右一一对应</b></p>
+  <div class="meta">v3.3.4 · HEAD 2c859f2 · 48 kHz only · 静态库 libnoise_toolkit.a · 5 源 + 12 头</div>
+</header>
+<div class="tabs"><div class="inner" id="tabs"></div></div>
+<div class="page" id="p1"><h2>架构图</h2>
+<p class="sub">三层级联：<b>层次 → 类 / 模块 → 函数</b>。箭头标出关键调用链，点击任一模块跳转到对应讲解页（页内附完整原始代码）。</p>
+<div class="diagram-wrap">
+<svg class="arch" viewBox="-8 0 1700 1345" xmlns="http://www.w3.org/2000/svg">
+<defs><marker id="ah" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="7" markerHeight="7"
+  orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5f7c93"/></marker></defs>
+
+<!-- ① 固件层 -->
+<rect class="band c1" x="150" y="50" width="1500" height="98" rx="10"/>
+<text class="cap" x="142" y="103" text-anchor="end">① 固件层</text>
+<a class="node-link" data-goto="p4"><g class="grp"><rect x="170" y="62" width="235" height="74" rx="8"/>
+<text class="gt" x="287" y="88" text-anchor="middle">ADC 采集与切块</text>
+<text class="fn" x="287" y="106" text-anchor="middle">48 kHz · float PCM</text>
+<text class="fn" x="287" y="121" text-anchor="middle">50 ms = 2400 samples</text></g></a>
+<a class="node-link" data-goto="p12"><g class="grp hot"><rect x="420" y="62" width="245" height="74" rx="8"/>
+<text class="gt" x="542" y="88" text-anchor="middle">NoiseProcessor 实例</text>
+<text class="fn" x="542" y="106" text-anchor="middle">⚠ 必须只创建一次</text>
+<text class="fn" x="542" y="121" text-anchor="middle">static / 类成员</text></g></a>
+<a class="node-link" data-goto="p7"><g class="grp"><rect x="680" y="62" width="225" height="74" rx="8"/>
+<text class="gt" x="792" y="88" text-anchor="middle">EventDetector 实例</text>
+<text class="fn" x="792" y="106" text-anchor="middle">独立状态机</text>
+<text class="fn" x="792" y="121" text-anchor="middle">自带 a_chain_</text></g></a>
+<a class="node-link" data-goto="p8"><g class="grp"><rect x="920" y="62" width="205" height="74" rx="8"/>
+<text class="gt" x="1022" y="88" text-anchor="middle">DoseState 实例</text>
+<text class="fn" x="1022" y="106" text-anchor="middle">累计剂量</text>
+<text class="fn" x="1022" y="121" text-anchor="middle">跨时间持存</text></g></a>
+<a class="node-link" data-goto="p11"><g class="grp"><rect x="1140" y="62" width="205" height="74" rx="8"/>
+<text class="gt" x="1242" y="88" text-anchor="middle">指标缓存</text>
+<text class="fn" x="1242" y="106" text-anchor="middle">SecondMetrics[ ]</text>
+<text class="fn" x="1242" y="121" text-anchor="middle">1 秒 = 20 块</text></g></a>
+<a class="node-link" data-goto="p4"><g class="grp"><rect x="1360" y="62" width="190" height="74" rx="8"/>
+<text class="gt" x="1455" y="88" text-anchor="middle">输出</text>
+<text class="fn" x="1455" y="106" text-anchor="middle">显示 / 存储 / 报警</text>
+<text class="fn" x="1455" y="121" text-anchor="middle">由聚合结果驱动</text></g></a>
+
+<!-- ② 对外接口层：4 个大类 -->
+<rect class="band c2" x="150" y="180" width="1500" height="164" rx="10"/>
+<text class="cap" x="142" y="266" text-anchor="end">② 对外接口层</text>
+
+<a class="node-link" data-goto="p5"><g class="grp api"><rect x="170" y="192" width="395" height="144" rx="8"/>
+<text class="gt" x="182" y="212">class NoiseProcessor</text>
+<text class="fn" x="182" y="232">② SecondMetrics process_segment(buf, end, dur)</text>
+<text class="fn" x="182" y="250">② MinuteMetrics aggregate_metrics(arr, n, unit)</text>
+<text class="fn" x="182" y="268">void reset()</text>
+<text class="fn" x="182" y="290">私有: a_weight_chain_ / c_weight_chain_</text>
+<text class="fn" x="182" y="308">      band_filters_[9] / laf_sq_a_ / las_sq_a_</text>
+<text class="fn" x="182" y="326">      （① 接口一 ② 接口二）</text></g></a>
+
+<a class="node-link" data-goto="p7"><g class="grp api"><rect x="585" y="192" width="395" height="144" rx="8"/>
+<text class="gt" x="597" y="212">class EventDetector</text>
+<text class="fn" x="597" y="232">③ EventCheckResult check_segment(buf, end)</text>
+<text class="fn" x="597" y="250">EventResult check_metrics(const SecondMetrics&amp;)</text>
+<text class="fn" x="597" y="268">EventResult check_metrics(buf, end)</text>
+<text class="fn" x="597" y="286">void reset() / was_impulse_detected()</text>
+<text class="fn" x="597" y="308">私有: a_chain_ / 去抖动 / LAF 环形缓冲</text>
+<text class="fn" x="597" y="326">      5 min 指数背景（③ 接口三）</text></g></a>
+
+<a class="node-link" data-goto="p8"><g class="grp api"><rect x="1000" y="192" width="265" height="144" rx="8"/>
+<text class="gt" x="1012" y="212">DoseState</text>
+<text class="fn" x="1012" y="232">④ accumulate(m, dur, std)</text>
+<text class="fn" x="1012" y="250">float twa(std) const</text>
+<text class="fn" x="1012" y="268">float lex(std) const</text>
+<text class="fn" x="1012" y="290">字段: cumulative_dose_frac</text>
+<text class="fn" x="1012" y="308">      elapsed_hours</text>
+<text class="fn" x="1012" y="326">（④ 接口四）</text></g></a>
+
+<a class="node-link" data-goto="p8"><g class="grp api"><rect x="1285" y="192" width="290" height="144" rx="8"/>
+<text class="gt" x="1297" y="212">class DoseCalculator</text>
+<text class="fn" x="1297" y="232">calculate_dose_increment(laeq, dur, prof)</text>
+<text class="fn" x="1297" y="250">calculate_twa(dose, std)  ×2 重载</text>
+<text class="fn" x="1297" y="268">calculate_lex(dose, prof)</text>
+<text class="fn" x="1297" y="286">calculate_allowed_time(laeq, prof)</text>
+<text class="fn" x="1297" y="304">get_profile() / parse_standard()</text>
+<text class="fn" x="1297" y="322">全静态，共 11 个方法</text></g></a>
+
+<!-- ③ 核心处理层：process_segment 内部函数级调用链 -->
+<rect class="band c3" x="150" y="384" width="1500" height="232" rx="10"/>
+<text class="cap" x="142" y="504" text-anchor="end">③ 核心处理层</text>
+
+<a class="node-link" data-goto="p5"><g class="grp"><rect x="170" y="396" width="190" height="208" rx="8"/>
+<text class="gt" x="265" y="418" text-anchor="middle">① 入口守卫</text>
+<text class="fn" x="265" y="440" text-anchor="middle">n = end − start</text>
+<text class="fn" x="265" y="456" text-anchor="middle">expected_n =</text>
+<text class="fn" x="265" y="472" text-anchor="middle">　sample_rate × dur</text>
+<text class="fn" x="265" y="494" text-anchor="middle">n ≠ expected_n</text>
+<text class="fn" x="265" y="510" text-anchor="middle">→ return {}</text>
+<text class="fn" x="265" y="532" text-anchor="middle">静默，不打日志</text></g></a>
+
+<a class="node-link" data-goto="p5"><g class="grp"><rect x="380" y="396" width="185" height="208" rx="8"/>
+<text class="gt" x="472" y="418" text-anchor="middle">② P1 拷贝</text>
+<text class="fn" x="472" y="440" text-anchor="middle">for i in 0..n</text>
+<text class="fn" x="472" y="456" text-anchor="middle">　a_buf[i] = src[i]</text>
+<text class="fn" x="472" y="472" text-anchor="middle">　c_buf[i] = src[i]</text>
+<text class="fn" x="472" y="494" text-anchor="middle">src 不被改写</text>
+<text class="fn" x="472" y="510" text-anchor="middle">零堆分配</text></g></a>
+
+<a class="node-link" data-goto="p5"><g class="grp"><rect x="585" y="396" width="200" height="208" rx="8"/>
+<text class="gt" x="685" y="418" text-anchor="middle">③ P2 A/C 计权</text>
+<text class="fn" x="685" y="440" text-anchor="middle">a_weight_chain_</text>
+<text class="fn" x="685" y="456" text-anchor="middle">　.process(a_buf[i])</text>
+<text class="fn" x="685" y="472" text-anchor="middle">　× a_weight_gain_</text>
+<text class="fn" x="685" y="494" text-anchor="middle">c_weight_chain_</text>
+<text class="fn" x="685" y="510" text-anchor="middle">　.process(c_buf[i])</text>
+<text class="fn" x="685" y="532" text-anchor="middle">状态跨调用连续</text></g></a>
+
+<a class="node-link" data-goto="p5"><g class="grp"><rect x="805" y="396" width="190" height="208" rx="8"/>
+<text class="gt" x="900" y="418" text-anchor="middle">④ P2.5 时间计权</text>
+<text class="fn" x="900" y="440" text-anchor="middle">α = exp(−1/τfs)</text>
+<text class="fn" x="900" y="456" text-anchor="middle">laf_sq_a_ =</text>
+<text class="fn" x="900" y="472" text-anchor="middle">　α·laf + (1−α)x²</text>
+<text class="fn" x="900" y="494" text-anchor="middle">las_sq_a_ 同理</text>
+<text class="fn" x="900" y="510" text-anchor="middle">Fast 125ms</text>
+<text class="fn" x="900" y="526" text-anchor="middle">Slow 1s</text></g></a>
+
+<a class="node-link" data-goto="p6"><g class="grp"><rect x="1015" y="396" width="205" height="208" rx="8"/>
+<text class="gt" x="1117" y="418" text-anchor="middle">⑤ P3 指标计算</text>
+<text class="fn" x="1117" y="440" text-anchor="middle">单遍 for 循环</text>
+<text class="fn" x="1117" y="456" text-anchor="middle">Σx² → LAeq/LCeq/LZeq</text>
+<text class="fn" x="1117" y="472" text-anchor="middle">峰值 / 峰度 / 矩 S1–S4</text>
+<text class="fn" x="1117" y="494" text-anchor="middle">DoseCalculator::</text>
+<text class="fn" x="1117" y="510" text-anchor="middle">　calculate_dose_increment</text>
+<text class="fn" x="1117" y="532" text-anchor="middle">（4 套标准各一次）</text></g></a>
+
+<a class="node-link" data-goto="p6"><g class="grp"><rect x="1240" y="396" width="200" height="208" rx="8"/>
+<text class="gt" x="1340" y="418" text-anchor="middle">⑥ P4 倍频程</text>
+<text class="fn" x="1340" y="440" text-anchor="middle">for b in 0..8</text>
+<text class="fn" x="1340" y="456" text-anchor="middle">　band_filters_[b]</text>
+<text class="fn" x="1340" y="472" text-anchor="middle">　　.process(x)</text>
+<text class="fn" x="1340" y="494" text-anchor="middle">逐样本过带通</text>
+<text class="fn" x="1340" y="510" text-anchor="middle">累加平方 → SPL</text>
+<text class="fn" x="1340" y="532" text-anchor="middle">63 Hz … 8 kHz</text></g></a>
+
+<!-- ④ 滤波基础设施 -->
+<rect class="band c4" x="150" y="654" width="1500" height="156" rx="10"/>
+<text class="cap" x="142" y="736" text-anchor="end">④ 滤波基础设施</text>
+<a class="node-link" data-goto="p9"><g class="grp"><rect x="585" y="666" width="200" height="132" rx="8"/>
+<text class="gt" x="685" y="688" text-anchor="middle">BiquadChain&lt;N&gt;::process()</text>
+<text class="fn" x="685" y="708" text-anchor="middle">sections[N]</text>
+<text class="fn" x="685" y="724" text-anchor="middle">state[N × 2]</text>
+<text class="fn" x="685" y="740" text-anchor="middle">转置直接 II 型</text>
+<text class="fn" x="685" y="762" text-anchor="middle">reset() 清零 state</text>
+<text class="fn" x="685" y="782" text-anchor="middle">逐节级联</text></g></a>
+<a class="node-link" data-goto="p9"><g class="grp"><rect x="805" y="666" width="190" height="132" rx="8"/>
+<text class="gt" x="900" y="688" text-anchor="middle">BiquadFilter::process()</text>
+<text class="fn" x="900" y="708" text-anchor="middle">b0_…a2_ 系数</text>
+<text class="fn" x="900" y="724" text-anchor="middle">z1_, z2_ 状态</text>
+<text class="fn" x="900" y="740" text-anchor="middle">每样本一次乘加</text>
+<text class="fn" x="900" y="762" text-anchor="middle">reset() 清零 z</text></g></a>
+<a class="node-link" data-goto="p9"><g class="grp"><rect x="1015" y="666" width="190" height="132" rx="8"/>
+<text class="gt" x="1110" y="688" text-anchor="middle">IIRFilter::process()</text>
+<text class="fn" x="1110" y="708" text-anchor="middle">通用二阶节</text>
+<text class="fn" x="1110" y="724" text-anchor="middle">process_sample()</text>
+<text class="fn" x="1110" y="740" text-anchor="middle">批量 process(vector)</text>
+<text class="fn" x="1110" y="762" text-anchor="middle">非 48k 路径</text></g></a>
+<a class="node-link" data-goto="p10"><g class="grp"><rect x="1225" y="666" width="235" height="132" rx="8"/>
+<text class="gt" x="1342" y="688" text-anchor="middle">filter_design::</text>
+<text class="fn" x="1342" y="708" text-anchor="middle">a_weighting_design()</text>
+<text class="fn" x="1342" y="724" text-anchor="middle">c_weighting_design()</text>
+<text class="fn" x="1342" y="740" text-anchor="middle">bilinear_transform()</text>
+<text class="fn" x="1342" y="762" text-anchor="middle">tf2sos() / butterworth()</text>
+<text class="fn" x="1342" y="782" text-anchor="middle">仅运行时回落使用</text></g></a>
+
+<!-- ⑤ 系数源 -->
+<rect class="band c5" x="150" y="844" width="1500" height="126" rx="10"/>
+<text class="cap" x="142" y="911" text-anchor="end">⑤ 系数源</text>
+<a class="node-link" data-goto="p13"><g class="grp"><rect x="585" y="856" width="200" height="102" rx="8"/>
+<text class="gt" x="685" y="878" text-anchor="middle">load_48k_chain()</text>
+<text class="fn" x="685" y="898" text-anchor="middle">signal_utils.cpp:49/65</text>
+<text class="fn" x="685" y="914" text-anchor="middle">从表装入 BiquadChain</text>
+<text class="fn" x="685" y="936" text-anchor="middle">gain_48k_a() / _c()</text></g></a>
+<a class="node-link" data-goto="p10"><g class="grp"><rect x="805" y="856" width="190" height="102" rx="8"/>
+<text class="gt" x="900" y="878" text-anchor="middle">WEIGHTING_TABLE</text>
+<text class="fn" x="900" y="898" text-anchor="middle">A_48000[4] / C_48000[3]</text>
+<text class="fn" x="900" y="914" text-anchor="middle">+ a_gain / c_gain</text>
+<text class="fn" x="900" y="936" text-anchor="middle">48 kHz only</text></g></a>
+<a class="node-link" data-goto="p10"><g class="grp"><rect x="1015" y="856" width="190" height="102" rx="8"/>
+<text class="gt" x="1110" y="878" text-anchor="middle">段数常量</text>
+<text class="fn" x="1110" y="898" text-anchor="middle">A_WEIGHTING_SECTIONS=4</text>
+<text class="fn" x="1110" y="914" text-anchor="middle">C_WEIGHTING_SECTIONS=3</text>
+<text class="fn" x="1110" y="936" text-anchor="middle">超出的段被静默丢弃</text></g></a>
+<a class="node-link" data-goto="p10"><g class="grp"><rect x="1225" y="856" width="235" height="102" rx="8"/>
+<text class="gt" x="1342" y="878" text-anchor="middle">BANDPASS_COEFFS_48K[9]</text>
+<text class="fn" x="1342" y="898" text-anchor="middle">bandpass_coefficients_48k</text>
+<text class="fn" x="1342" y="914" text-anchor="middle">63 Hz … 8 kHz</text>
+<text class="fn" x="1342" y="936" text-anchor="middle">9 个 1/3 倍频程</text></g></a>
+
+<!-- ⑥ 数据结构 -->
+<rect class="band c6" x="150" y="1004" width="1500" height="126" rx="10"/>
+<text class="cap" x="142" y="1071" text-anchor="end">⑥ 数据结构</text>
+<a class="node-link" data-goto="p11"><g class="grp"><rect x="170" y="1016" width="225" height="102" rx="8"/>
+<text class="gt" x="282" y="1038" text-anchor="middle">SecondMetrics</text>
+<text class="fn" x="282" y="1058" text-anchor="middle">45 float / 81 项指标</text>
+<text class="fn" x="282" y="1074" text-anchor="middle">声级13·剂量4·倍频程9</text>
+<text class="fn" x="282" y="1096" text-anchor="middle">原始矩 S1–S4</text></g></a>
+<a class="node-link" data-goto="p11"><g class="grp"><rect x="415" y="1016" width="190" height="102" rx="8"/>
+<text class="gt" x="510" y="1038" text-anchor="middle">MinuteMetrics</text>
+<text class="fn" x="510" y="1058" text-anchor="middle">40 个 float</text>
+<text class="fn" x="510" y="1074" text-anchor="middle">接口二输出</text>
+<text class="fn" x="510" y="1096" text-anchor="middle">聚合结果</text></g></a>
+<a class="node-link" data-goto="p11"><g class="grp"><rect x="625" y="1016" width="190" height="102" rx="8"/>
+<text class="gt" x="720" y="1038" text-anchor="middle">EventResult</text>
+<text class="fn" x="720" y="1058" text-anchor="middle">type / severity</text>
+<text class="fn" x="720" y="1074" text-anchor="middle">EventType 枚举</text>
+<text class="fn" x="720" y="1096" text-anchor="middle">接口三输出</text></g></a>
+<a class="node-link" data-goto="p11"><g class="grp"><rect x="835" y="1016" width="185" height="102" rx="8"/>
+<text class="gt" x="927" y="1038" text-anchor="middle">DoseMetrics</text>
+<text class="fn" x="927" y="1058" text-anchor="middle">DoseProfile</text>
+<text class="fn" x="927" y="1074" text-anchor="middle">DoseStandard 枚举</text>
+<text class="fn" x="927" y="1096" text-anchor="middle">接口四输出</text></g></a>
+<a class="node-link" data-goto="p11"><g class="grp"><rect x="1040" y="1016" width="205" height="102" rx="8"/>
+<text class="gt" x="1142" y="1038" text-anchor="middle">FreqBandMoments</text>
+<text class="fn" x="1142" y="1058" text-anchor="middle">9 频带原始矩</text>
+<text class="fn" x="1142" y="1074" text-anchor="middle">供聚合精确合并</text></g></a>
+<a class="node-link" data-goto="p13"><g class="grp"><rect x="1265" y="1016" width="175" height="102" rx="8"/>
+<text class="gt" x="1352" y="1038" text-anchor="middle">Signal</text>
+<text class="fn" x="1352" y="1058" text-anchor="middle">data / sample_rate</text>
+<text class="fn" x="1352" y="1074" text-anchor="middle">channels</text>
+<text class="fn" x="1352" y="1096" text-anchor="middle">工具库输入</text></g></a>
+
+<!-- ⑦ 工具与验证 -->
+<rect class="band c7" x="150" y="1164" width="1500" height="126" rx="10"/>
+<text class="cap" x="142" y="1231" text-anchor="end">⑦ 工具与验证</text>
+<a class="node-link" data-goto="p14"><g class="grp tool"><rect x="170" y="1176" width="220" height="102" rx="8"/>
+<text class="gt" x="280" y="1198" text-anchor="middle">tools/ (10)</text>
+<text class="fn" x="280" y="1218" text-anchor="middle">regen_weighting_coefficients.py</text>
+<text class="fn" x="280" y="1234" text-anchor="middle">regen_bandpass_coefficients.py</text>
+<text class="fn" x="280" y="1256" text-anchor="middle">probe_*.py / probe_*.cpp</text></g></a>
+<a class="node-link" data-goto="p14"><g class="grp tool"><rect x="410" y="1176" width="220" height="102" rx="8"/>
+<text class="gt" x="520" y="1198" text-anchor="middle">tests/ (17)</text>
+<text class="fn" x="520" y="1218" text-anchor="middle">test_class1_precision.cpp</text>
+<text class="fn" x="520" y="1234" text-anchor="middle">test_end_to_end.cpp</text>
+<text class="fn" x="520" y="1256" text-anchor="middle">test_state_persistence_matrix</text></g></a>
+<a class="node-link" data-goto="p14"><g class="grp tool"><rect x="650" y="1176" width="195" height="102" rx="8"/>
+<text class="gt" x="747" y="1198" text-anchor="middle">validation/</text>
+<text class="fn" x="747" y="1218" text-anchor="middle">validate_dose_calculator.py</text>
+<text class="fn" x="747" y="1240" text-anchor="middle">剂量标准独立校验</text></g></a>
+<a class="node-link" data-goto="p14"><g class="grp tool"><rect x="865" y="1176" width="195" height="102" rx="8"/>
+<text class="gt" x="962" y="1198" text-anchor="middle">examples/</text>
+<text class="fn" x="962" y="1218" text-anchor="middle">main.cpp</text>
+<text class="fn" x="962" y="1240" text-anchor="middle">4 个接口官方示范</text></g></a>
+<a class="node-link" data-goto="p14"><g class="grp tool"><rect x="1080" y="1176" width="195" height="102" rx="8"/>
+<text class="gt" x="1177" y="1198" text-anchor="middle">docs/ (10)</text>
+<text class="fn" x="1177" y="1218" text-anchor="middle">DEVELOPMENT_PLAN_v*.md</text>
+<text class="fn" x="1177" y="1240" text-anchor="middle">BUG_v3.2_A_WEIGHTING.md</text></g></a>
+<a class="node-link" data-goto="p14"><g class="grp tool"><rect x="1295" y="1176" width="195" height="102" rx="8"/>
+<text class="gt" x="1392" y="1198" text-anchor="middle">results/</text>
+<text class="fn" x="1392" y="1218" text-anchor="middle">验收报告 / 验证数据</text>
+<text class="fn" x="1392" y="1240" text-anchor="middle">测试程序</text></g></a>
+
+<!-- ══ 调用链箭头 ══ -->
+<path class="arr" marker-end="url(#ah)" d="M 405 99 L 416 99"/>
+<path class="arr" marker-end="url(#ah)" d="M 542 136 L 542 188"/>
+<text class="albl" x="548" y="166">调用</text>
+<path class="arr" marker-end="url(#ah)" d="M 792 136 L 780 188"/>
+<path class="arr" marker-end="url(#ah)" d="M 1022 136 L 1132 190"/>
+<path class="arr" marker-end="url(#ah)" d="M 1242 136 L 1242 188"/>
+
+<path class="arr" marker-end="url(#ah)" d="M 300 336 L 300 368 L 265 368 L 265 392"/>
+<text class="albl" x="308" y="362">process_segment()</text>
+
+<path class="arr" marker-end="url(#ah)" d="M 360 500 L 374 500"/>
+<path class="arr" marker-end="url(#ah)" d="M 565 500 L 579 500"/>
+<path class="arr" marker-end="url(#ah)" d="M 785 500 L 799 500"/>
+<path class="arr" marker-end="url(#ah)" d="M 995 500 L 1009 500"/>
+<path class="arr" marker-end="url(#ah)" d="M 1220 500 L 1234 500"/>
+
+<path class="arr" marker-end="url(#ah)" d="M 685 604 L 685 662"/>
+<text class="albl" x="691" y="638">process()</text>
+<path class="arr" marker-end="url(#ah)" d="M 1340 604 L 1340 662"/>
+<path class="arr" marker-end="url(#ah)" d="M 1117 604 L 1117 1012"/>
+<text class="albl" x="1123" y="900">填充字段</text>
+
+<path class="arr" marker-end="url(#ah)" d="M 785 732 L 799 732"/>
+<path class="arr" marker-end="url(#ah)" d="M 900 798 L 900 852"/>
+<text class="albl" x="906" y="830">系数</text>
+<path class="arr" marker-end="url(#ah)" d="M 805 907 L 789 907"/>
+<path class="arr" marker-end="url(#ah)" d="M 900 856 L 700 812"/>
+<text class="albl" x="742" y="880">装入</text>
+<path class="arr" marker-end="url(#ah)" d="M 1340 856 L 1340 800"/>
+<text class="albl" x="1346" y="830">系数</text>
+<path class="arr" marker-end="url(#ah)" d="M 415 1067 L 429 1067"/>
+<text class="albl" x="330" y="1114">聚合</text>
+</svg>
+</div>
+<h3>关键调用链时序（process_segment 一行块内发生的事）</h3>
+<table><thead><tr><th>#</th><th>调用</th><th>位置</th><th>状态</th></tr></thead><tbody><tr><td class="n">1</td><td><code>expected_n</code> 校验</td><td class="n">noise_processor.cpp:126</td><td>无</td></tr><tr><td class="n">2</td><td><code>a_buf[i] / c_buf[i] = buffer_start[i]</code></td><td class="n">:141</td><td>无</td></tr><tr><td class="n">3</td><td><code>a_weight_chain_.process(x) × a_weight_gain_</code></td><td class="n">:167</td><td class="good">成员状态，跨调用连续</td></tr><tr><td class="n">4</td><td><code>c_weight_chain_.process(x) × c_weight_gain_</code></td><td class="n">:168</td><td class="good">成员状态，跨调用连续</td></tr><tr><td class="n">5</td><td><code>laf_sq_a_ / las_sq_a_</code> 指数更新</td><td class="n">:172–185</td><td class="good">成员状态</td></tr><tr><td class="n">6</td><td>Σx² / 峰值 / 峰度 / 矩 S1–S4</td><td class="n">:186–323</td><td>局部累加</td></tr><tr><td class="n">7</td><td><code>DoseCalculator::calculate_dose_increment()</code> ×4</td><td class="n">:188–191</td><td>纯函数</td></tr><tr><td class="n">8</td><td><code>band_filters_[b].process(x)</code> × 9 段</td><td class="n">:324–414</td><td class="good">成员状态，跨调用连续</td></tr></tbody></table>
+<div class="warn"><b>红框是本次问题的关键</b>「NoiseProcessor 实例」必须只创建一次 —— 所有绿色状态的连续性都取决于它。详见 <a href="#" data-goto="p12">⚠ 状态连续性</a>。</div>
+
+<div class="pager"><button disabled>← 上一页</button><button data-goto="p2">下一页 →</button></div></div><div class="page" id="p2">
+<h2>项目全貌</h2>
+<p class="sub">5 个源文件（2164 行）+ 12 个头文件 + 6 个辅助目录。</p>
+<h3>顶层结构</h3>
+<table><thead><tr><th>路径</th><th>文件数</th><th>体积</th><th>作用</th></tr></thead><tbody>
+<tr><td class="n">src/</td><td class="n">5</td><td class="n">96 K</td><td><b>核心实现</b>，编入静态库 · 2164 行</td></tr>
+<tr><td class="n">include/</td><td class="n">12（+1 .bak）</td><td class="n">100 K</td><td><b>公开 API 与数据结构</b></td></tr>
+<tr><td class="n">tests/</td><td class="n">17</td><td class="n">200 K</td><td>单元 / 回归 / 精度验收</td></tr>
+<tr><td class="n">tools/</td><td class="n">10</td><td class="n">204 K</td><td>系数生成器 + 频带探针</td></tr>
+<tr><td class="n">docs/</td><td class="n">10</td><td class="n">184 K</td><td>开发计划与专题文档</td></tr>
+<tr><td class="n">examples/</td><td class="n">1</td><td class="n">24 K</td><td>4 个接口的官方示范</td></tr>
+<tr><td class="n">validation/</td><td class="n">1</td><td class="n">16 K</td><td>剂量标准独立校验</td></tr>
+<tr><td class="n">results/</td><td class="n">—</td><td class="n">1.9 G</td><td>验收产物与录音</td></tr>
+<tr><td class="n">build_test/</td><td class="n">20</td><td class="n">3.0 M</td><td>构建输出（可重建）</td></tr>
+<tr><td class="n">explainer/</td><td class="n">4</td><td class="n">—</td><td><b>本文档的生成器</b>（见 p14）</td></tr>
+</tbody></table>
+<h3>src/ 五个实现文件</h3>
+<table><thead><tr><th>文件</th><th>行数</th><th>体积</th><th>职责</th></tr></thead><tbody>
+<tr><td class="n">noise_processor.cpp</td><td class="n">543</td><td class="n">24.9 K</td><td><b>接口一 / 二</b></td></tr>
+<tr><td class="n">signal_utils.cpp</td><td class="n">634</td><td class="n">22.3 K</td><td>工具库：计权 / FFT / RMS / 峰度</td></tr>
+<tr><td class="n">iir_filter.cpp</td><td class="n">534</td><td class="n">16.8 K</td><td>IIR 运行时设计 + 滤波器实现</td></tr>
+<tr><td class="n">event_detector.cpp</td><td class="n">416</td><td class="n">14.7 K</td><td><b>接口三</b></td></tr>
+<tr><td class="n">dose_calculator.cpp</td><td class="n">37</td><td class="n">1.2 K</td><td><b>接口四</b></td></tr>
+</tbody></table>
+<h3>include/ 十二个头文件</h3>
+<table><thead><tr><th>头文件</th><th>行数</th><th>声明</th></tr></thead><tbody>
+<tr><td class="n">noise_processor.hpp</td><td class="n">180</td><td><code>NoiseProcessor</code>（接口一/二）</td></tr>
+<tr><td class="n">event_detector.hpp</td><td class="n">277</td><td><code>EventDetector</code> · <code>EventResult</code> · <code>EventType</code> · <code>EventCheckResult</code> · <code>EventDetectorConfig</code></td></tr>
+<tr><td class="n">dose_calculator.hpp</td><td class="n">204</td><td><code>DoseCalculator</code> · <code>DoseProfile</code> · <code>DoseMetrics</code> · <code>DoseStandard</code></td></tr>
+<tr><td class="n">dose_state.hpp</td><td class="n">165</td><td><code>DoseState</code>（接口四）</td></tr>
+<tr><td class="n">noise_metrics.hpp</td><td class="n">364</td><td><code>SecondMetrics</code> · <code>MinuteMetrics</code> · <code>FreqBandMoments</code></td></tr>
+<tr><td class="n">iir_filter.hpp</td><td class="n">216</td><td><code>IIRFilter</code> · <code>BiquadFilter</code> · 系数结构</td></tr>
+<tr><td class="n">filter_coefficients_48k.hpp</td><td class="n">68</td><td><code>BiquadChain&lt;N&gt;</code> + 段数常量</td></tr>
+<tr><td class="n">weighting_coefficients_multirate.hpp</td><td class="n">87</td><td><code>WEIGHTING_TABLE</code></td></tr>
+<tr><td class="n">bandpass_coefficients_48k.hpp</td><td class="n">—</td><td><code>BANDPASS_COEFFS_48K[9]</code></td></tr>
+<tr><td class="n">signal_utils.hpp</td><td class="n">206</td><td><code>Signal</code> + 24 个自由函数</td></tr>
+<tr><td class="n">math_constants.hpp</td><td class="n">—</td><td>常量</td></tr>
+<tr><td class="n">noise_toolkit.hpp</td><td class="n">—</td><td>umbrella header</td></tr>
+</tbody></table>
+
+<div class="pager"><button data-goto="p1">← 上一页</button><button data-goto="p3">下一页 →</button></div></div><div class="page" id="p3">
+<h2>它是什么：静态库，不是服务</h2>
+<p class="sub">理解整个项目的前提，也是固件集成方式争议的根源。</p>
+<div class="csrc">唯一的库目标<code>CMakeLists.txt:28–28</code><span class="cl">1 行</span></div><pre><code>add_library(noise_toolkit STATIC ${CORE_SOURCES})</code></pre>
+<div class="warn"><b>烧进固件后不会“自己运行”</b>它是<strong>被固件代码调用的函数集合</strong>。固件必须自己创建实例、切块、调用、取结果。</div>
+<table><thead><tr><th>常见误解</th><th>实际情况</th></tr></thead><tbody>
+<tr><td>烧进去就常驻运行</td><td>静态库，完全被动调用</td></tr>
+<tr><td>只需调用接口，无需开发</td><td>需约 30–50 行集成代码</td></tr>
+<tr><td>状态由库内部管理</td><td>状态挂在<strong>调用方持有的实例</strong>上</td></tr>
+<tr><td>只有一个处理器对象</td><td>需要 3 个实例：<code>NoiseProcessor</code> + <code>EventDetector</code> + <code>DoseState</code></td></tr>
+</tbody></table>
+
+<div class="pager"><button data-goto="p2">← 上一页</button><button data-goto="p4">下一页 →</button></div></div><div class="page" id="p4">
+<h2>固件集成</h2>
+<p class="sub">覆盖 4 个接口的完整集成代码。核心只有一点：实例只创建一次。</p>
+<div class="csrc">接口一签名<code>include/noise_processor.hpp:66–68</code><span class="cl">3 行</span></div><pre><code>    SecondMetrics process_segment(<span class="kw">const</span> <span class="kw">float</span>* buffer_start,
+                                   <span class="kw">const</span> <span class="kw">float</span>* buffer_end,
+                                   <span class="kw">float</span> duration_s = 0.01f) <span class="kw">noexcept</span>;</code></pre><div class="csrc">接口二签名<code>include/noise_processor.hpp:85–87</code><span class="cl">3 行</span></div><pre><code>    MinuteMetrics aggregate_metrics(<span class="kw">const</span> SecondMetrics* metrics,
+                                     <span class="kw">int</span> count,
+                                     <span class="kw">float</span> unit_duration_s = 1.0f) <span class="kw">noexcept</span>;</code></pre>
+<pre><code><span class="kw">#include</span> <span class="str">"noise_processor.hpp"</span>
+<span class="kw">#include</span> <span class="str">"event_detector.hpp"</span>
+<span class="kw">#include</span> <span class="str">"dose_state.hpp"</span>
+<span class="kw">using namespace</span> noise_toolkit;
+
+<span class="cmt">// ① 三个实例，全部只创建一次</span>
+<span class="kw">static</span> NoiseProcessor g_proc(48000);   <span class="cmt">// 接口一 + 二</span>
+<span class="kw">static</span> EventDetector  g_evt;            <span class="cmt">// 接口三</span>
+<span class="kw">static</span> DoseState      g_dose;           <span class="cmt">// 接口四</span>
+
+<span class="kw">static</span> SecondMetrics cache[20];
+<span class="kw">static</span> <span class="kw">int</span> idx = 0;
+
+<span class="kw">void</span> on_adc_block(<span class="kw">float</span>* pcm, uint32_t n) {
+    <span class="kw">auto</span> m = g_proc.process_segment(pcm, pcm + n, 0.05f);      <span class="cmt">// 接口一</span>
+
+    <span class="kw">auto</span> ev = g_evt.check_segment(pcm, pcm + n);              <span class="cmt">// 接口三</span>
+    m.event_type     = ev.type;
+    m.event_severity = ev.severity;
+
+    cache[idx++] = m;
+
+    <span class="kw">if</span> (idx == 20) {                                          <span class="cmt">// 满 1 秒</span>
+        <span class="kw">auto</span> minute = g_proc.aggregate_metrics(cache, 20, 0.05f); <span class="cmt">// 接口二</span>
+        g_dose = g_dose.accumulate(minute, 1.0f, DoseStandard::NIOSH); <span class="cmt">// 接口四</span>
+        ui_update(minute);
+        idx = 0;
+    }
+}</code></pre>
+<div class="warn"><b>三个实例都要长期持有</b><code>NoiseProcessor</code> 持有滤波器状态；<code>EventDetector</code> 持有去抖动 / LAF 环形缓冲 / 5 分钟背景；<code>DoseState</code> 持有累计剂量。任一实例被重建，对应状态就清零。</div>
+<h3>五种错误写法</h3>
+<pre><code><span class="cmt">// ❌ 1. 局部变量写在块处理函数内</span>
+<span class="kw">void</span> on_adc_block(<span class="kw">float</span>* b, uint32_t n) { NoiseProcessor proc(48000); }
+
+<span class="cmt">// ❌ 2. 每次测量周期重建</span>
+<span class="kw">void</span> do_measurement() { NoiseProcessor proc(48000); }
+
+<span class="cmt">// ❌ 3. new 放在循环 / 中断里</span>
+<span class="kw">auto</span>* p = <span class="kw">new</span> NoiseProcessor(48000);
+p-&gt;process_segment(...); <span class="kw">delete</span> p;
+
+<span class="cmt">// ❌ 4. C 封装层每次 create / destroy</span>
+<span class="kw">void</span>* h = noise_create(48000); noise_process(h, buf, n, 0.05f); noise_destroy(h);
+
+<span class="cmt">// ❌ 5. 复用实例但每次测量前 reset()（最隐蔽）</span>
+g_proc.reset();</code></pre>
+
+<div class="pager"><button data-goto="p3">← 上一页</button><button data-goto="p5">下一页 →</button></div></div><div class="page" id="p5"><h2><span class="iface">接口一</span>process_segment() —— 逐段讲解</h2>
+<p class="sub">单块声学指标的主入口。<b>左栏是讲解，右栏是它对应的源码</b>，共 14 段，合计 289 行。</p>
+<div class="seg"><div class="ex"><h4><span class="stag">01</span>函数签名与入口守卫</h4><p><b>签名</b>：吃的是原始 PCM 的两个指针（起止）+ 时长，不拥有缓冲区。</p>
+<p><b>守卫</b>：<code>expected_n = sample_rate_ × duration_s</code> 是<b>精确</b>样本数。</p>
+<p class="risk">长度不等或为 0 → <code>return SecondMetrics{};</code>，<b>静默返回全零</b>，不报错不打日志。</p>
+<p>读到的 LAeq 为 0 或 <code>-inf</code> 时，第一件事查这里。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:126–139</code><span class="cl">14 行</span></div><pre><code>SecondMetrics NoiseProcessor::process_segment(<span class="kw">const</span> <span class="kw">float</span>* buffer_start,
+                                                <span class="kw">const</span> <span class="kw">float</span>* buffer_end,
+                                                <span class="kw">float</span> duration_s) <span class="kw">noexcept</span> {
+    <span class="kw">size_t</span> n = buffer_end - buffer_start;
+    <span class="kw">size_t</span> expected_n = static_cast&lt;<span class="kw">size_t</span>&gt;(sample_rate_ * duration_s);
+
+    <span class="kw">if</span> (n != expected_n || n == 0) {
+        <span class="kw">return</span> SecondMetrics{};
+    }
+
+    SecondMetrics m;
+    m.duration_s = duration_s;
+    m.n_samples = static_cast&lt;<span class="kw">int32_t</span>&gt;(n);
+</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">02</span>Phase 1 · 拷贝到 scratch</h4><p>声明两个 <b>VLA</b>（变长数组）<code>a_buf</code> / <code>c_buf</code>，按实际样本数在<b>栈上</b>分配。</p>
+<p>为什么需要两份？A 计权和 C 计权要把<b>同一段原始信号各滤一遍</b>，不能互相覆盖。</p>
+<p><b>原始 buffer 全程不被改写</b> —— Phase 3 算 LZeq / 峰值 / 峰度 / 原始矩时还要读它。所以固件传入的 buffer 在函数返回后可立即复用。</p>
+<p class="tip">零堆分配：48 kHz 下 10 ms 块仅 480 样本，栈压力极小。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:140–154</code><span class="cl">15 行</span></div><pre><code>    <span class="cmt">// ---------------------------------------------------------------</span>
+    <span class="cmt">// Phase 1: Copy input to scratch buffers for A/C weighting</span>
+    <span class="cmt">// Stack-allocated VLAs sized to actual sample count (zero heap alloc).</span>
+    <span class="cmt">// For n ≤ 48000 this fits easily on most stacks (e.g. 8000 samples =</span>
+    <span class="cmt">// ~64 KiB for a typical 10 ms @ 48 kHz block — well within limits).</span>
+    <span class="cmt">// ---------------------------------------------------------------</span>
+    <span class="kw">float</span> a_buf[n];
+    <span class="kw">float</span> c_buf[n];
+
+    <span class="cmt">// Copy input to scratch buffers</span>
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; n; ++i) {
+        a_buf[i] = buffer_start[i];
+        c_buf[i] = buffer_start[i];
+    }
+</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">03</span>Phase 2 · A/C 计权</h4><p>逐样本流过两条 <b>成员</b> IIR 链：<code>a_weight_chain_</code> / <code>c_weight_chain_</code>。</p>
+<p class="key">状态跨调用连续（v3.3.2 起）。</p>
+<p>源码注释写明了原因：A 计权段 2 是 20.6 Hz 双极点，τ = 1/((1−|p|)·fs) ≈ 7.7 ms，约 50 ms 才收敛。若每 10 ms 段都重置，滤波器永远来不及建立 → 20/25 Hz 的 LAeq 虚高数十 dB。</p>
+<p><b>1 kHz 归一化增益</b>（<code>a_weight_gain_</code>）在链<b>之后</b>单独相乘 —— v3.2.1 的修复，不能烘进 <code>b</code> 系数，否则高频响应被拉歪。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:155–170</code><span class="cl">16 行</span></div><pre><code>    <span class="cmt">// ---------------------------------------------------------------</span>
+    <span class="cmt">// Phase 2: A/C weighting — streaming in-place (zero heap alloc)</span>
+    <span class="cmt">// ---------------------------------------------------------------</span>
+    <span class="cmt">// v3.3.2: 滤波器状态跨 process_segment() 调用持续保留（不重置）。</span>
+    <span class="cmt">// 原因：A 计权段 2（20.6 Hz 双极点）时间常数 tau = 1/((1-|p|)*fs) ≈ 7.7 ms，</span>
+    <span class="cmt">// 约 50 ms 才能收敛到稳态。若每 10 ms 段都重置状态，滤波器永远来不及收敛，</span>
+    <span class="cmt">// 导致 20/25 Hz 低频 LAeq 虚高（PE-04 频段偏差可达数十 dB）。</span>
+    <span class="cmt">// 商用 Class 1 声级计的滤波器状态也是连续运行的（开机后不重置）。</span>
+    <span class="cmt">// 若需要重新开始一段独立测量，显式调用 NoiseProcessor::reset()。</span>
+    <span class="cmt">//</span>
+    <span class="cmt">// v3.2.1: apply 1kHz gain factor AFTER the biquad chain (separate from b/a coefficients)</span>
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; n; ++i) {
+        a_buf[i] = a_weight_chain_.process(a_buf[i]) * a_weight_gain_;
+        c_buf[i] = c_weight_chain_.process(c_buf[i]) * c_weight_gain_;
+    }
+</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">04</span>Phase 2.5 · 计算 α 系数</h4><p>只算系数，<b>实际状态更新折叠进下面的主循环</b>（避免二次遍历）。</p>
+<p>α = exp(−1/(τ·fs))：Fast τ=125 ms，Slow τ=1 s，按 IEC 61672-1 §7.4。</p>
+<p>48 kHz 下 Fast α ≈ 0.99983，Slow α ≈ 0.99998 —— 都非常接近 1，即「几乎不忘记历史」，这正是时间计权的物理含义。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:171–185</code><span class="cl">15 行</span></div><pre><code>    <span class="cmt">// ---------------------------------------------------------------</span>
+    <span class="cmt">// Phase 2.5 (v3.3.2): Exponential time weighting state update (IEC 61672-1 §7)</span>
+    <span class="cmt">// Alpha constants for Fast (τ=125ms) and Slow (τ=1s) per IEC 61672-1 §7.4</span>
+    <span class="cmt">// α = exp(−1 / (τ · fs)), with τ in seconds and fs = sample_rate_</span>
+    <span class="cmt">// ---------------------------------------------------------------</span>
+    <span class="cmt">// α = exp(−1 / (τ · fs))，τ 单位秒，fs = sample_rate_</span>
+    <span class="kw">const</span> <span class="kw">float</span> alpha_F = <span class="kw">std</span>::exp(-1.0f / (0.125f * static_cast&lt;<span class="kw">float</span>&gt;(sample_rate_)));  <span class="cmt">// Fast τ=125ms</span>
+    <span class="kw">const</span> <span class="kw">float</span> alpha_S = <span class="kw">std</span>::exp(-1.0f / (1.0f   * static_cast&lt;<span class="kw">float</span>&gt;(sample_rate_)));  <span class="cmt">// Slow τ=1s</span>
+    <span class="kw">const</span> <span class="kw">float</span> one_minus_alpha_F = 1.0f - alpha_F;
+    <span class="kw">const</span> <span class="kw">float</span> one_minus_alpha_S = 1.0f - alpha_S;
+
+    <span class="cmt">// Update exponential time weighting state in the biquad output loop above.</span>
+    <span class="cmt">// (For efficiency, the actual state update is folded into the main loop below</span>
+    <span class="cmt">//  to avoid a second pass over the n samples.)</span>
+</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">05</span>Phase 3 · 累加器声明</h4><p>三套<b>原始矩</b> S1–S4：Z（未计权）、A、C 各一组，共 12 个变量。</p>
+<p>为什么用矩而不是直接存样本？<b>峰度可以在不保留波形的前提下算出来</b>，且能跨块精确合并（接口二就靠它）。</p>
+<p>另有三个能量累加器（算 Leq）与三个峰值跟踪。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:186–199</code><span class="cl">14 行</span></div><pre><code>    <span class="cmt">// ---------------------------------------------------------------</span>
+    <span class="cmt">// Phase 3: Compute all metrics in a single pass (zero heap alloc)</span>
+    <span class="cmt">// ---------------------------------------------------------------</span>
+    <span class="cmt">// v3.3.1: Accumulate weighted moments (s1-s4) for ALL three weightings</span>
+    <span class="cmt">// in the main loop, then compute kurtosis from moments.  This eliminates</span>
+    <span class="cmt">// dependency on the VLA buffers for kurtosis (a_buf/c_buf may be</span>
+    <span class="cmt">// corrupted by stack issues on memory-constrained embedded platforms).</span>
+    <span class="cmt">// v3.3.2: Also update exponential time weighting state (LAF/LAS) inline.</span>
+    <span class="kw">float</span> sum_x = 0.0f, sum_x2 = 0.0f, sum_x3 = 0.0f, sum_x4 = 0.0f;
+    <span class="kw">float</span> sum_a1 = 0.0f, sum_a2 = 0.0f, sum_a3 = 0.0f, sum_a4 = 0.0f;
+    <span class="kw">float</span> sum_c1 = 0.0f, sum_c2 = 0.0f, sum_c3 = 0.0f, sum_c4 = 0.0f;
+    <span class="kw">float</span> sum_a_sq = 0.0f, sum_c_sq = 0.0f, sum_z_sq = 0.0f;
+    <span class="kw">float</span> peak_z = 0.0f, peak_c = 0.0f, peak_a = 0.0f;   <span class="cmt">// v3.3.0: track A-weighted peak</span>
+</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">06</span>主循环 · 三种矩与能量</h4><p>单遍扫描，一次循环把<b>所有</b>东西累加完 —— 没有第二趟。</p>
+<p>每样本取 <code>z</code>（原始）、<code>a</code>（A 计权后）、<code>c</code>（C 计权后），各自算平方，然后：</p>
+<ul><li>累加 z/a/c 的 S1–S4 矩（<code>z2*z</code> 即 z³，<code>z2*z2</code> 即 z⁴）</li>
+<li>累加三个能量（<code>sum_*_sq</code>）供 Leq 使用</li></ul>
+<p class="tip">全部是加法与乘法，无除法、无开方 —— MCU 上很省。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:200–230</code><span class="cl">31 行</span></div><pre><code>    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; n; ++i) {
+        <span class="kw">float</span> z = buffer_start[i];
+        <span class="kw">float</span> a = a_buf[i];
+        <span class="kw">float</span> c = c_buf[i];
+
+        <span class="cmt">// Raw moments (Z signal)</span>
+        <span class="kw">float</span> z2 = z * z;
+        sum_x += z;
+        sum_x2 += z2;
+        sum_x3 += z2 * z;
+        sum_x4 += z2 * z2;
+
+        <span class="cmt">// A-weighted moments (for kurtosis)</span>
+        <span class="kw">float</span> a2 = a * a;
+        sum_a1 += a;
+        sum_a2 += a2;
+        sum_a3 += a2 * a;
+        sum_a4 += a2 * a2;
+
+        <span class="cmt">// C-weighted moments (for kurtosis)</span>
+        <span class="kw">float</span> c2 = c * c;
+        sum_c1 += c;
+        sum_c2 += c2;
+        sum_c3 += c2 * c;
+        sum_c4 += c2 * c2;
+
+        <span class="cmt">// Energy accumulators for Leq</span>
+        sum_a_sq += a2;
+        sum_c_sq += c2;
+        sum_z_sq += z2;
+</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">07</span>主循环 · 指数计权与峰值</h4><p class="key">四个成员状态在这四行里更新：<code>laf_sq_a_</code> / <code>las_sq_a_</code> / <code>laf_sq_c_</code> / <code>las_sq_c_</code>。</p>
+<p>公式 <code>state = α·state + (1−α)·y²</code> —— 一阶指数平均。因为它们是<b>成员变量</b>，状态跨 <code>process_segment()</code> 连续。</p>
+<p>同时跟踪三个峰值（取绝对值最大）。</p>
+<p class="risk">若实例被重建，这四个状态归零 → LAF/LAS 读数会从 0 重新爬升，需要约 5τ（Fast 625 ms / Slow 5 s）才稳定。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:231–248</code><span class="cl">18 行</span></div><pre><code>        <span class="cmt">// === v3.3.2/v3.3.3: Exponential time weighting state update ===</span>
+        <span class="cmt">// state = α·state + (1−α)·y²</span>
+        <span class="cmt">// This gives LAF/LAS/LCF/LCS readings that are time-weighted SPL (IEC 61672-1 §7).</span>
+        <span class="cmt">// The state persists across process_segment() calls, so readings are continuous.</span>
+        <span class="cmt">// v3.3.3（方案 C）：仅 A/C 保持时间计权，Z 已移除（无加权，实用价值低）。</span>
+        laf_sq_a_ = alpha_F * laf_sq_a_ + one_minus_alpha_F * a2;
+        las_sq_a_ = alpha_S * las_sq_a_ + one_minus_alpha_S * a2;
+        laf_sq_c_ = alpha_F * laf_sq_c_ + one_minus_alpha_F * c2;
+        las_sq_c_ = alpha_S * las_sq_c_ + one_minus_alpha_S * c2;
+
+        <span class="cmt">// Peak tracking (v3.3.0: +peak_a for A-weighted peak level)</span>
+        <span class="kw">float</span> abs_z = <span class="kw">std</span>::abs(z);
+        <span class="kw">float</span> abs_c = <span class="kw">std</span>::abs(c);
+        <span class="kw">float</span> abs_a = <span class="kw">std</span>::abs(a);
+        <span class="kw">if</span> (abs_z &gt; peak_z) peak_z = abs_z;
+        <span class="kw">if</span> (abs_c &gt; peak_c) peak_c = abs_c;
+        <span class="kw">if</span> (abs_a &gt; peak_a) peak_a = abs_a;
+    }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">08</span>存原始矩与峰度</h4><p>四个 Z 矩写进 <code>SecondMetrics</code>，供接口二聚合时使用。</p>
+<p><b>峰度从矩算</b>，不读 VLA 缓冲 —— v3.3.1 的改动：避免依赖 <code>a_buf/c_buf</code> 的栈完整性（嵌入式上栈可能被破坏）。</p>
+<p>三种计权各算一个峰度：<code>beta_kurtosis</code>（Z）、<code>kurtosis_a_weighted</code>、<code>kurtosis_c_weighted</code>。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:250–264</code><span class="cl">15 行</span></div><pre><code>    <span class="cmt">// Store raw moments</span>
+    m.sum_x = sum_x;
+    m.sum_x2 = sum_x2;
+    m.sum_x3 = sum_x3;
+    m.sum_x4 = sum_x4;
+
+    <span class="cmt">// Kurtosis from raw moments (all three weightings)</span>
+    <span class="cmt">// v3.3.1: Use calculate_kurtosis_from_moments for ALL weightings.</span>
+    <span class="cmt">// This method uses pre-accumulated moments (s1-s4) which are</span>
+    <span class="cmt">// reliable scalars, NOT dependent on VLA buffer integrity.</span>
+    m.beta_kurtosis = calculate_kurtosis_from_moments(m.n_samples, sum_x, sum_x2, sum_x3, sum_x4);
+    m.kurtosis_total = m.beta_kurtosis;  <span class="cmt">// Z-weighted kurtosis (same as beta)</span>
+    m.kurtosis_a_weighted = calculate_kurtosis_from_moments(m.n_samples, sum_a1, sum_a2, sum_a3, sum_a4);
+    m.kurtosis_c_weighted = calculate_kurtosis_from_moments(m.n_samples, sum_c1, sum_c2, sum_c3, sum_c4);
+</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">09</span>Leq 与峰值换算</h4><p>一个 lambda 统一做「平方和 → RMS → dB SPL」，三处复用。</p>
+<p>公式：<code>rms = sqrt(sum_sq / n)</code>，<code>Leq = 20·log10(rms / 20µPa)</code>。</p>
+<p>峰值同理但用 <b>peak</b> 而非 RMS（<code>20·log10(peak / p_ref)</code>）。<code>LZPeak</code> 是 OVERLOAD 判据的主依据。</p>
+<p class="tip"><code>rms &lt;= 0</code> 返回 <code>-INFINITY</code>，避免 log10(0)。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:265–281</code><span class="cl">17 行</span></div><pre><code>    <span class="cmt">// Leq calculations</span>
+    <span class="kw">auto</span> calc_leq_from_sum_sq = [this](<span class="kw">float</span> sum_sq, <span class="kw">size_t</span> n_) -&gt; <span class="kw">float</span> {
+        <span class="kw">if</span> (n_ == 0) <span class="kw">return</span> -INFINITY;
+        <span class="kw">float</span> rms = <span class="kw">std</span>::sqrt(sum_sq / n_);
+        <span class="kw">if</span> (rms &lt;= 0) <span class="kw">return</span> -INFINITY;
+        <span class="kw">return</span> 20.0f * <span class="kw">std</span>::log10(rms / reference_pressure_);
+    };
+
+    m.LAeq = calc_leq_from_sum_sq(sum_a_sq, n);
+    m.LCeq = calc_leq_from_sum_sq(sum_c_sq, n);
+    m.LZeq = calc_leq_from_sum_sq(sum_z_sq, n);
+
+    <span class="cmt">// Peak calculations (v3.3.0: +LAPeak for A-weighted peak level)</span>
+    m.LZPeak  = (peak_z &gt; 0) ? (20.0f * <span class="kw">std</span>::log10(peak_z / reference_pressure_)) : -INFINITY;
+    m.LCPeak  = (peak_c &gt; 0) ? (20.0f * <span class="kw">std</span>::log10(peak_c / reference_pressure_)) : -INFINITY;
+    m.LAPeak  = (peak_a &gt; 0) ? (20.0f * <span class="kw">std</span>::log10(peak_a / reference_pressure_)) : -INFINITY;
+</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">10</span>时间计权读数与最大值</h4><p>把功率状态转成 dB。关键常数：</p>
+<p><code>ref_sq_db = −20·log10(20e-6) ≈ 93.9794 dB</code></p>
+<p>推导：<code>10·log10(state/p_ref²) = 10·log10(state) − 20·log10(p_ref)</code>。</p>
+<p>输出四个读数：<code>LAF</code>/<code>LAS</code>（A 的 Fast/Slow）、<code>LCF</code>/<code>LCS</code>（C 的 Fast/Slow）。</p>
+<p class="tip"><code>LASmax</code>/<code>LCSmax</code> 直接取 Slow 值 —— Slow 本身已起平滑最大作用。<code>LAFmax</code> 是 <code>LAeq+3</code> 的近似，保留仅为兼容旧消费者。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:282–305</code><span class="cl">24 行</span></div><pre><code>    <span class="cmt">// v3.3.2: LAF/LAS readings from exponential time weighting state</span>
+    <span class="cmt">// LAF = 10·log10(laf_sq_a_) → A-weighted Fast (τ=125ms) time-weighted SPL</span>
+    <span class="cmt">// LAS = 10·log10(las_sq_a_) → A-weighted Slow (τ=1s) time-weighted SPL</span>
+    <span class="cmt">//</span>
+    <span class="cmt">// 换算常数推导：LAeq = 10·log10(state / p_ref²) = 10·log10(state) − 20·log10(p_ref)</span>
+    <span class="cmt">// 当 p_ref = 20 μPa 时，−20·log10(20e-6) = +93.9794 dB</span>
+    <span class="kw">const</span> <span class="kw">float</span> ref_sq_db = -20.0f * <span class="kw">std</span>::log10(reference_pressure_);   <span class="cmt">// ≈ 93.9794 dB</span>
+    <span class="kw">auto</span> state_to_db = [ref_sq_db](<span class="kw">float</span> state_sq) -&gt; <span class="kw">float</span> {
+        <span class="kw">if</span> (state_sq &lt;= 0) <span class="kw">return</span> -INFINITY;
+        <span class="kw">return</span> 10.0f * <span class="kw">std</span>::log10(state_sq) + ref_sq_db;
+    };
+
+    m.LAF  = state_to_db(laf_sq_a_);   <span class="cmt">// Fast time-weighted SPL (τ=125ms)</span>
+    m.LAS  = state_to_db(las_sq_a_);   <span class="cmt">// Slow time-weighted SPL (τ=1s)</span>
+    <span class="cmt">// v3.3.3（方案 C）：C 计权同步输出 LCF/LCS（C 在低频同样有建立时间问题，且为 LCpeak 配套）</span>
+    m.LCF  = state_to_db(laf_sq_c_);   <span class="cmt">// C-weighted Fast (τ=125ms)</span>
+    m.LCS  = state_to_db(las_sq_c_);   <span class="cmt">// C-weighted Slow (τ=1s)</span>
+
+    <span class="cmt">// LAFmax approximation (Leq + 3 dB as in original) — v3.3.2 保留兼容旧消费者</span>
+    m.LAFmax = m.LAeq + 3.0f;
+    <span class="cmt">// LASmax / LCSmax = 各自的 Slow 时间计权值（Slow 已起平滑最大作用）</span>
+    m.LASmax = m.LAS;
+    m.LCSmax = m.LCS;
+</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">11</span>剂量与 QC 标志</h4><p>只有 <code>LAeq &gt; 0</code> 才算剂量，避免无效值污染累计。</p>
+<p>四套标准各取一次 profile，调 <code>DoseCalculator::calculate_dose_increment()</code>，<code>/100</code> 换算成比例。</p>
+<p><b>QC 标志</b>：OVERLOAD 判据是 <code>LZPeak &gt; 140 dB</code>（IEC Class 1）；<code>wearing_state</code> 用 <code>LAeq &gt; 40</code> 粗判是否佩戴。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:306–323</code><span class="cl">18 行</span></div><pre><code>    <span class="cmt">// Dose calculations</span>
+    <span class="kw">if</span> (m.LAeq &gt; 0) {
+        <span class="kw">const</span> <span class="kw">auto</span>&amp; prof_n = DoseCalculator::get_profile(DoseStandard::NIOSH);
+        <span class="kw">const</span> <span class="kw">auto</span>&amp; prof_p = DoseCalculator::get_profile(DoseStandard::OSHA_PEL);
+        <span class="kw">const</span> <span class="kw">auto</span>&amp; prof_h = DoseCalculator::get_profile(DoseStandard::OSHA_HCA);
+        <span class="kw">const</span> <span class="kw">auto</span>&amp; prof_e = DoseCalculator::get_profile(DoseStandard::EU_ISO);
+
+        m.dose_frac_niosh    = DoseCalculator::calculate_dose_increment(m.LAeq, duration_s, prof_n) / 100.0f;
+        m.dose_frac_osha_pel = DoseCalculator::calculate_dose_increment(m.LAeq, duration_s, prof_p) / 100.0f;
+        m.dose_frac_osha_hca = DoseCalculator::calculate_dose_increment(m.LAeq, duration_s, prof_h) / 100.0f;
+        m.dose_frac_eu_iso   = DoseCalculator::calculate_dose_increment(m.LAeq, duration_s, prof_e) / 100.0f;
+    }
+
+    <span class="cmt">// QC flags (per IEC 61672-1 Class 1: OVERLOAD = LZPeak &gt; 140 dB)</span>
+    m.overload_flag = (m.LZPeak &gt; OVERLOAD_THRESHOLD);
+    m.underrange_flag = (m.LAeq &lt; UNDERRANGE_THRESHOLD);
+    m.wearing_state = (m.LAeq &gt; 40.0f);
+</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">12</span>Phase 4 · 带通增益校正</h4><p class="risk">二阶带通在中心频率的峰值增益 ∝ fc² —— 低频带会比高频带低约 25 dB。必须逐带补偿。</p>
+<p>48 kHz 直接用预计算值 <code>peak_gain_correction</code>（零运行时成本）；其他采样率现算 |H(e^jω)| 并取倒数。</p>
+<p>这是 v3.2 的 Bug A 修复。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:324–369</code><span class="cl">46 行</span></div><pre><code>    <span class="cmt">// ---------------------------------------------------------------</span>
+    <span class="cmt">// Phase 4: 1/3 octave band analysis — streaming (zero heap alloc)</span>
+    <span class="cmt">// Each band filter processes each sample and accumulates moments inline</span>
+    <span class="cmt">// ---------------------------------------------------------------</span>
+    FreqBandMoments band_moments[9] = {};
+
+    <span class="cmt">// === v3.2 Bug A fix (SPL-level peak gain correction) ===</span>
+    <span class="cmt">// The 2nd-order bandpass biquad has peak gain |H(fc)| ∝ fc², causing</span>
+    <span class="cmt">// low-frequency bands to report SPL ~25 dB lower than high-frequency</span>
+    <span class="cmt">// bands when fed a signal at their center frequency. We apply a</span>
+    <span class="cmt">// per-band correction factor to the RMS so the reported SPL is</span>
+    <span class="cmt">// physically correct. The correction is pre-computed for 48 kHz</span>
+    <span class="cmt">// and computed on-the-fly for other sample rates.</span>
+    <span class="kw">float</span> band_corrections[9] = {};
+    {
+        <span class="kw">const</span> <span class="kw">float</span> fs = static_cast&lt;<span class="kw">float</span>&gt;(sample_rate_);
+        <span class="kw">const</span> <span class="kw">float</span> BAND_FACTOR = 1.12246204830937f;  <span class="cmt">// 2^(1/6)</span>
+        <span class="kw">for</span> (<span class="kw">int</span> b = 0; b &lt; 9; ++b) {
+            <span class="kw">float</span> fc = BAND_CENTER_FREQS[b];
+            <span class="cmt">// For 48 kHz, use the pre-computed correction</span>
+            <span class="kw">if</span> (sample_rate_ == 48000) {
+                band_corrections[b] = BANDPASS_COEFFS_48K[b].peak_gain_correction;
+            } <span class="kw">else</span> {
+                <span class="cmt">// Compute |H(fc)| for the dynamically-designed biquad</span>
+                <span class="kw">float</span> b0 = band_filters_[b].b0();
+                <span class="kw">float</span> b1 = band_filters_[b].b1();
+                <span class="kw">float</span> b2 = band_filters_[b].b2();
+                <span class="kw">float</span> a0 = band_filters_[b].a0();
+                <span class="kw">float</span> a1 = band_filters_[b].a1();
+                <span class="kw">float</span> a2 = band_filters_[b].a2();
+                <span class="kw">double</span> w0 = 2.0 * noise_const::PI_F * fc / fs;
+                <span class="kw">double</span> cos_w = <span class="kw">std</span>::cos(w0);
+                <span class="kw">double</span> sin_w = <span class="kw">std</span>::sin(w0);
+                <span class="cmt">// H(z=e^jω) numerator/denominator</span>
+                <span class="kw">double</span> num_re = b0 + b1 * cos_w + b2 * <span class="kw">std</span>::cos(2.0 * w0);
+                <span class="kw">double</span> num_im = -b1 * sin_w - b2 * <span class="kw">std</span>::sin(2.0 * w0);
+                <span class="kw">double</span> den_re = a0 + a1 * cos_w + a2 * <span class="kw">std</span>::cos(2.0 * w0);
+                <span class="kw">double</span> den_im = -a1 * sin_w - a2 * <span class="kw">std</span>::sin(2.0 * w0);
+                <span class="kw">double</span> num_mag = <span class="kw">std</span>::sqrt(num_re * num_re + num_im * num_im);
+                <span class="kw">double</span> den_mag = <span class="kw">std</span>::sqrt(den_re * den_re + den_im * den_im);
+                <span class="kw">double</span> peak_gain = (den_mag &gt; 1e-30) ? (num_mag / den_mag) : 1.0;
+                band_corrections[b] = (peak_gain &gt; 1e-30)
+                    ? static_cast&lt;<span class="kw">float</span>&gt;(1.0 / peak_gain) : 1.0f;
+            }
+        }
+    }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">13</span>逐频带滤波与 SPL</h4><p>9 个频带逐个处理，每带内层再遍历全部样本。</p>
+<p class="risk"><b>注意第 373 行：<code>band_filters_[b].reset();</code></b> —— 带通滤波器<b>每段都重置</b>，与 A/C 计权的「状态连续」策略不同。带通只需段内统计，重置可避免上段残留污染本段。</p>
+<p>滤波后累加平方与 S1–S4 矩，乘增益校正，再转 dB。</p>
+<p class="tip">最后按 <code>b</code> 用 switch 分发到 9 个具名字段（63 Hz … 16 kHz）。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:371–406</code><span class="cl">36 行</span></div><pre><code>    <span class="kw">for</span> (<span class="kw">int</span> b = 0; b &lt; 9; ++b) {
+        <span class="cmt">// Reset band filter for each segment (matches original behavior)</span>
+        band_filters_[b].reset();
+
+        <span class="kw">float</span> sum_sq_band = 0.0f;
+        band_moments[b].n = static_cast&lt;<span class="kw">int32_t</span>&gt;(n);
+
+        <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; n; ++i) {
+            <span class="cmt">// Filter each sample in-place through the bandpass filter</span>
+            <span class="kw">float</span> x = band_filters_[b].process(buffer_start[i]);
+            <span class="kw">float</span> x2 = x * x;
+            sum_sq_band += x2;
+            band_moments[b].s1 += x;
+            band_moments[b].s2 += x2;
+            band_moments[b].s3 += x2 * x;
+            band_moments[b].s4 += x2 * x2;
+        }
+
+        <span class="kw">float</span> band_rms = <span class="kw">std</span>::sqrt(sum_sq_band / n);
+        <span class="cmt">// Apply v3.2 Bug A peak-gain correction (multiply RMS by correction</span>
+        <span class="cmt">// factor before converting to dB; equivalent to adding 20·log10(corr) to SPL)</span>
+        <span class="kw">float</span> corrected_rms = band_rms * band_corrections[b];
+        <span class="kw">float</span> spl = (corrected_rms &gt; 0) ? (20.0f * <span class="kw">std</span>::log10(corrected_rms / reference_pressure_)) : -INFINITY;
+
+        <span class="kw">switch</span> (b) {
+            <span class="kw">case</span> 0: m.freq_63hz_spl = spl; <span class="kw">break</span>;
+            <span class="kw">case</span> 1: m.freq_125hz_spl = spl; <span class="kw">break</span>;
+            <span class="kw">case</span> 2: m.freq_250hz_spl = spl; <span class="kw">break</span>;
+            <span class="kw">case</span> 3: m.freq_500hz_spl = spl; <span class="kw">break</span>;
+            <span class="kw">case</span> 4: m.freq_1khz_spl = spl; <span class="kw">break</span>;
+            <span class="kw">case</span> 5: m.freq_2khz_spl = spl; <span class="kw">break</span>;
+            <span class="kw">case</span> 6: m.freq_4khz_spl = spl; <span class="kw">break</span>;
+            <span class="kw">case</span> 7: m.freq_8khz_spl = spl; <span class="kw">break</span>;
+            <span class="kw">case</span> 8: m.freq_16khz_spl = spl; <span class="kw">break</span>;
+        }
+    }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">14</span>存频带矩并返回</h4><p>9 组频带矩通过 <code>band_moments_ptr()</code> 写进结构体，供接口二做跨块精确聚合。</p>
+<p>返回 <code>SecondMetrics</code> —— 81 项指标，一块一份。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:408–414</code><span class="cl">7 行</span></div><pre><code>    <span class="cmt">// Store band moments</span>
+    <span class="kw">for</span> (<span class="kw">int</span> i = 0; i &lt; 9; ++i) {
+        *band_moments_ptr(m, i) = band_moments[i];
+    }
+
+    <span class="kw">return</span> m;
+}</code></pre></div></div>
+<div class="pager"><button data-goto="p4">← 上一页</button><button data-goto="p6">下一页 →</button></div></div><div class="page" id="p6"><h2><span class="iface">接口二</span>aggregate_metrics() —— 逐段讲解</h2>
+<p class="sub">把 N 个 <code>SecondMetrics</code> 合成一个 <code>MinuteMetrics</code>。共 7 段、125 行。</p>
+<div class="seg"><div class="ex"><h4><span class="stag">01</span>签名与空输入守卫</h4><p>吃一个 <code>SecondMetrics</code> 数组 + 元素个数 + 每个元素代表的时长。</p>
+<p>输出 <code>MinuteMetrics</code>（40 个 float）。</p>
+<p class="risk"><code>count &lt;= 0</code> 或空指针 → 返回默认构造的对象（全零/负无穷），不报错。</p>
+<p class="key">本函数<b>纯数值聚合</b>，不触碰任何滤波器状态。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:416–420</code><span class="cl">5 行</span></div><pre><code>MinuteMetrics NoiseProcessor::aggregate_metrics(<span class="kw">const</span> SecondMetrics* second_metrics,
+                                                   <span class="kw">int</span> count,
+                                                   <span class="kw">float</span> unit_duration_s) <span class="kw">noexcept</span> {
+    MinuteMetrics result;
+    <span class="kw">if</span> (count &lt;= 0 || second_metrics == <span class="kw">nullptr</span>) <span class="kw">return</span> result;</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">02</span>累加器初始化</h4><p>时间戳取第一块；<code>valid_seconds</code> 记有效块数。</p>
+<p>三个功率累加器（LAeq/LCeq/LZeq）—— 注意是<b>功率</b>不是 dB。</p>
+<p>六个最大值初始化为 <code>-INFINITY</code>，这样第一次 <code>std::max</code> 就能正确取到真实值。</p>
+<p>矩累加器 + 9 个频带矩 + 9 个频带功率。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:422–439</code><span class="cl">18 行</span></div><pre><code>    result.timestamp = second_metrics[0].timestamp;
+    result.duration_s = 0.0f;
+    result.valid_seconds = count;
+
+    <span class="kw">float</span> sum_power_laeq = 0.0f, sum_power_lceq = 0.0f, sum_power_lzeq = 0.0f;
+    result.LAFmax = -INFINITY;
+    result.LASmax = -INFINITY;       <span class="cmt">// v3.3.2: +LASmax max aggregation</span>
+    result.LCSmax = -INFINITY;       <span class="cmt">// v3.3.3: +LCSmax max aggregation</span>
+    result.LZPeak = -INFINITY;
+    result.LCPeak = -INFINITY;       <span class="cmt">// v3.3.0: +LCPeak max aggregation</span>
+    result.LAPeak = -INFINITY;       <span class="cmt">// v3.3.0: +LAPeak max aggregation</span>
+
+    <span class="kw">int64_t</span> total_n = 0;
+    <span class="kw">float</span> total_s1 = 0.0f, total_s2 = 0.0f, total_s3 = 0.0f, total_s4 = 0.0f;
+
+    FreqBandMoments agg_band_moments[9] = {};
+
+    <span class="kw">float</span> band_power[9] = {0.0f};</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">03</span>主循环 · 能量 / 最大值 / 剂量 / QC</h4><p class="key">核心：<code>db_to_power(m.LAeq)</code> 把每块的 dB 转成线性功率再相加。</p>
+<p class="risk">绝不能直接对 dB 求平均 —— 那会低估（3 dB 差 = 功率差一倍）。</p>
+<p>六个 max 用 <code>std::max</code> 滚动取最大；四套剂量直接相加；QC 用计数。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:441–464</code><span class="cl">24 行</span></div><pre><code>    <span class="kw">for</span> (<span class="kw">int</span> i = 0; i &lt; count; ++i) {
+        <span class="kw">const</span> SecondMetrics&amp; m = second_metrics[i];
+
+        result.duration_s += m.duration_s;
+
+        sum_power_laeq += db_to_power(m.LAeq);
+        sum_power_lceq += db_to_power(m.LCeq);
+        sum_power_lzeq += db_to_power(m.LZeq);
+
+        result.LAFmax = <span class="kw">std</span>::max(result.LAFmax, m.LAFmax);
+        result.LASmax = <span class="kw">std</span>::max(result.LASmax, m.LASmax);   <span class="cmt">// v3.3.2</span>
+        result.LCSmax = <span class="kw">std</span>::max(result.LCSmax, m.LCSmax);   <span class="cmt">// v3.3.3</span>
+        result.LZPeak = <span class="kw">std</span>::max(result.LZPeak, m.LZPeak);
+        result.LCPeak = <span class="kw">std</span>::max(result.LCPeak, m.LCPeak);   <span class="cmt">// v3.3.0</span>
+        result.LAPeak = <span class="kw">std</span>::max(result.LAPeak, m.LAPeak);   <span class="cmt">// v3.3.0</span>
+
+        result.dose_frac_niosh    += m.dose_frac_niosh;
+        result.dose_frac_osha_pel += m.dose_frac_osha_pel;
+        result.dose_frac_osha_hca += m.dose_frac_osha_hca;
+        result.dose_frac_eu_iso   += m.dose_frac_eu_iso;
+
+        <span class="kw">if</span> (m.overload_flag) result.overload_count++;
+        <span class="kw">if</span> (m.underrange_flag) result.underrange_count++;
+</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">04</span>事件计数与频带矩</h4><p><b>事件分级计数</b>：按 <code>m.event_type</code>（0–3）累加 MINOR/MODERATE/SEVERE 三个计数器。<br>
+注意这是<b>接口三回写</b>到 metrics 的字段 —— 接口二只是读，并不调 EventDetector。</p>
+<p><b>频带矩</b>：9 个频带各累加 n 与 S1–S4，用于跨块合并峰度。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:465–490</code><span class="cl">26 行</span></div><pre><code>        <span class="cmt">// v3.3.3: 事件分级计数（由 EventDetector::check_metrics() 回写到 m.event_type）</span>
+        <span class="kw">switch</span> (m.event_type) {
+            <span class="kw">case</span> 1: result.event_minor_count++;    <span class="kw">break</span>;  <span class="cmt">// EventType::MINOR</span>
+            <span class="kw">case</span> 2: result.event_moderate_count++; <span class="kw">break</span>;  <span class="cmt">// EventType::MODERATE</span>
+            <span class="kw">case</span> 3: result.event_severe_count++;   <span class="kw">break</span>;  <span class="cmt">// EventType::SEVERE</span>
+            default: <span class="kw">break</span>;                                  <span class="cmt">// NONE</span>
+        }
+
+        <span class="kw">if</span> (m.n_samples &gt; 0) {
+            total_s1 += m.sum_x;
+            total_s2 += m.sum_x2;
+            total_s3 += m.sum_x3;
+            total_s4 += m.sum_x4;
+            total_n += m.n_samples;
+        }
+
+        <span class="kw">for</span> (<span class="kw">int</span> b = 0; b &lt; 9; ++b) {
+            <span class="kw">const</span> FreqBandMoments* mp = band_moments_ptr(m, b);
+            <span class="kw">if</span> (mp &amp;&amp; mp-&gt;n &gt; 0) {
+                agg_band_moments[b].n += mp-&gt;n;
+                agg_band_moments[b].s1 += mp-&gt;s1;
+                agg_band_moments[b].s2 += mp-&gt;s2;
+                agg_band_moments[b].s3 += mp-&gt;s3;
+                agg_band_moments[b].s4 += mp-&gt;s4;
+            }
+        }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">05</span>频带能量累加</h4><p>9 个频带的 SPL 也按<b>功率</b>累加，与 LAeq 同理。</p>
+<p>逐行写开而不是循环，是为了避免字符串到字段的映射开销 —— 嵌入式常见的写法。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:492–501</code><span class="cl">10 行</span></div><pre><code>        band_power[0] += db_to_power(m.freq_63hz_spl);
+        band_power[1] += db_to_power(m.freq_125hz_spl);
+        band_power[2] += db_to_power(m.freq_250hz_spl);
+        band_power[3] += db_to_power(m.freq_500hz_spl);
+        band_power[4] += db_to_power(m.freq_1khz_spl);
+        band_power[5] += db_to_power(m.freq_2khz_spl);
+        band_power[6] += db_to_power(m.freq_4khz_spl);
+        band_power[7] += db_to_power(m.freq_8khz_spl);
+        band_power[8] += db_to_power(m.freq_16khz_spl);
+    }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">06</span>功率平均换算</h4><p>除以块数得到平均功率，再转回 dB。</p>
+<p>这就是<b>能量平均</b>（equivalent level），不是算术平均。</p>
+<p><b>原始矩直接相加</b>后写入结果，并用合计矩重算总峰度 —— 这样峰度在数学上与「把全部样本拼起来算」等价。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:503–527</code><span class="cl">25 行</span></div><pre><code>    <span class="kw">float</span> count_f = static_cast&lt;<span class="kw">float</span>&gt;(count);
+    result.LAeq = power_to_db(sum_power_laeq / count_f);
+    result.LCeq = power_to_db(sum_power_lceq / count_f);
+    result.LZeq = power_to_db(sum_power_lzeq / count_f);
+
+    result.freq_63hz_spl  = power_to_db(band_power[0] / count_f);
+    result.freq_125hz_spl = power_to_db(band_power[1] / count_f);
+    result.freq_250hz_spl = power_to_db(band_power[2] / count_f);
+    result.freq_500hz_spl = power_to_db(band_power[3] / count_f);
+    result.freq_1khz_spl  = power_to_db(band_power[4] / count_f);
+    result.freq_2khz_spl  = power_to_db(band_power[5] / count_f);
+    result.freq_4khz_spl  = power_to_db(band_power[6] / count_f);
+    result.freq_8khz_spl  = power_to_db(band_power[7] / count_f);
+    result.freq_16khz_spl = power_to_db(band_power[8] / count_f);
+
+    result.n_samples = static_cast&lt;<span class="kw">int32_t</span>&gt;(total_n);
+    result.sum_x = total_s1;
+    result.sum_x2 = total_s2;
+    result.sum_x3 = total_s3;
+    result.sum_x4 = total_s4;
+
+    <span class="kw">if</span> (total_n &gt; 0) {
+        result.kurtosis_total = calculate_kurtosis_from_moments(
+            result.n_samples, total_s1, total_s2, total_s3, total_s4);
+    }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">07</span>频带矩与返回</h4><p>9 组频带矩写回，返回 <code>MinuteMetrics</code>。</p>
+<p class="tip">输出可继续作为下一级聚合的输入（例如 60 个 1 秒 → 1 分钟 → 1 小时），因为矩是可加的。</p></div><div class="cd"><div class="csrc"><code>src/noise_processor.cpp:529–540</code><span class="cl">12 行</span></div><pre><code>    *band_moments_ptr(result, 0) = agg_band_moments[0];
+    *band_moments_ptr(result, 1) = agg_band_moments[1];
+    *band_moments_ptr(result, 2) = agg_band_moments[2];
+    *band_moments_ptr(result, 3) = agg_band_moments[3];
+    *band_moments_ptr(result, 4) = agg_band_moments[4];
+    *band_moments_ptr(result, 5) = agg_band_moments[5];
+    *band_moments_ptr(result, 6) = agg_band_moments[6];
+    *band_moments_ptr(result, 7) = agg_band_moments[7];
+    *band_moments_ptr(result, 8) = agg_band_moments[8];
+
+    <span class="kw">return</span> result;
+}</code></pre></div></div>
+<div class="pager"><button data-goto="p5">← 上一页</button><button data-goto="p7">下一页 →</button></div></div><div class="page" id="p7"><h2><span class="iface">接口三</span>EventDetector —— 逐段讲解</h2>
+<p class="sub">与 <code>NoiseProcessor</code> 完全解耦的独立状态机。先看主入口 <code>check_segment()</code>。</p>
+<h3>check_segment() —— 吃原始 PCM</h3>
+<div class="seg"><div class="ex"><h4><span class="stag">01</span>签名与空输入守卫</h4><p>吃原始 PCM 起止指针，输出 <code>EventCheckResult</code>（NORMAL / UNDERRANGE / OVERLOAD 等）。</p><p class="tip">起止指针逆序直接返回 NORMAL —— 防御性检查。</p></div><div class="cd"><div class="csrc"><code>src/event_detector.cpp:79–83</code><span class="cl">5 行</span></div><pre><code>EventCheckResult EventDetector::check_segment(<span class="kw">const</span> <span class="kw">float</span>* buffer_start,
+                                               <span class="kw">const</span> <span class="kw">float</span>* buffer_end) <span class="kw">noexcept</span> {
+    <span class="kw">if</span> (buffer_start &gt;= buffer_end) {
+        <span class="kw">return</span> EventCheckResult::NORMAL;
+    }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">02</span>计算 LZeq 与 LZpeak</h4><p>两个内部辅助分别扫一遍缓冲：<code>compute_leq()</code> 算等效声级，<code>compute_peak()</code> 算绝对值最大。</p><p class="risk">注意这里用 <b>Z 计权</b>（未计权），不是 A 计权 —— 过载判据看的是原始峰值。</p></div><div class="cd"><div class="csrc"><code>src/event_detector.cpp:85–86</code><span class="cl">2 行</span></div><pre><code>    <span class="kw">float</span> lzeq = compute_leq(buffer_start, buffer_end);
+    <span class="kw">float</span> lzpeak = compute_peak(buffer_start, buffer_end);</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">03</span>峰值触发（最高优先级）</h4><p class="key">峰值超阈值 → 立即 OVERLOAD，<b>绕过冷却与去抖动</b>。</p><p>同时置 <code>impulse_detected_</code>、重置冷却计数、清零异常计数。</p><p>为什么绕过？脉冲噪声的判定不能延迟 —— 一旦削波，本段数据已废。</p></div><div class="cd"><div class="csrc"><code>src/event_detector.cpp:88–94</code><span class="cl">7 行</span></div><pre><code>    <span class="cmt">// Peak trigger: highest priority, bypasses cooldown and debounce</span>
+    <span class="kw">if</span> (lzpeak &gt;= config_.peak_threshold_db) {
+        impulse_detected_ = <span class="kw">true</span>;
+        cooldown_remaining_ = config_.cooldown_frames;
+        consecutive_anomaly_count_ = 0;
+        <span class="kw">return</span> EventCheckResult::OVERLOAD;
+    }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">04</span>冷却期</h4><p>冷却期内只抑制<b>电平</b>触发，不抑制上面的过载。</p><p>同时仍判欠量程（信号太小），返回 UNDERRANGE。</p></div><div class="cd"><div class="csrc"><code>src/event_detector.cpp:96–103</code><span class="cl">8 行</span></div><pre><code>    <span class="cmt">// Cooldown suppresses level trigger only (not overload above)</span>
+    <span class="kw">if</span> (cooldown_remaining_ &gt; 0) {
+        --cooldown_remaining_;
+        <span class="kw">if</span> (lzeq &lt; config_.underrange_threshold_db) {
+            <span class="kw">return</span> EventCheckResult::UNDERRANGE;
+        }
+        <span class="kw">return</span> EventCheckResult::NORMAL;
+    }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">05</span>已废弃的 LZeq 触发逻辑</h4><p class="risk">v3.3.0 起，基于 <code>LZeq &gt; 90</code> 的 IMPULSE_SUSPECT 触发被<b>注释保留</b>（第 105–126 行整块注释，第 128 行起才是生效代码）。</p><p>接口三的单触发建议改为：<b>只有 LZpeak ≥ 140 dB → OVERLOAD</b>。</p><p>要恢复需同时取消注释并把 <code>leq_threshold_db</code> 默认值改回 90。这段是「死代码但有文档价值」的典型。</p></div><div class="cd"><div class="csrc"><code>src/event_detector.cpp:105–133</code><span class="cl">29 行</span></div><pre><code>    /*
+     * [v3.3.0] LZeq&gt;90 trigger LOGIC DEPRECATED
+     * Interface 3 single-trigger recommendation: ONLY LZpeak &gt;= 140 dB → OVERLOAD
+     * To restore: uncomment this block AND change leq_threshold_db default back to 90.0f
+     *
+    <span class="kw">const</span> <span class="kw">uint8_t</span> required_frames = required_debounce_frames(config_.debounce_frames);
+    <span class="kw">if</span> (lzeq &gt;= config_.leq_threshold_db) {
+        <span class="kw">if</span> (consecutive_anomaly_count_ &lt; UINT8_MAX) {
+            ++consecutive_anomaly_count_;
+        }
+        <span class="kw">if</span> (consecutive_anomaly_count_ &gt;= required_frames) {
+            impulse_detected_ = <span class="kw">true</span>;
+            cooldown_remaining_ = config_.cooldown_frames;
+            consecutive_anomaly_count_ = 0;
+            <span class="kw">return</span> EventCheckResult::IMPULSE_SUSPECT;
+        }
+    } <span class="kw">else</span> {
+        consecutive_anomaly_count_ = 0;
+    }
+    */
+    <span class="cmt">// [v3.3.0] LZeq-based IMPULSE_SUSPECT disabled</span>
+    <span class="cmt">// consecutive_anomaly_count_ preserved ABI-compatible but never incremented</span>
+
+    <span class="kw">if</span> (lzeq &lt; config_.underrange_threshold_db) {
+        <span class="kw">return</span> EventCheckResult::UNDERRANGE;
+    }
+
+    <span class="kw">return</span> EventCheckResult::NORMAL;
+}</code></pre></div></div>
+<h3>check_metrics(const SecondMetrics&amp;) —— 用已有指标判定</h3>
+<p class="sub">四判据 D1–D4。注意它是<b>有状态</b>的：会更新背景与 LAF 历史。</p>
+<div class="seg"><div class="ex"><h4><span class="stag">D1</span>收集输入与时间步长</h4><p>把 LAF/LAS 从 metrics 取出；<code>dt</code> 用 <code>duration_s</code>（异常时兜底 1 s）。</p><p>两个 <code>isfinite</code> 标志决定后续几个判据是否可用 —— 无效值不参与比较。</p></div><div class="cd"><div class="csrc"><code>src/event_detector.cpp:199–206</code><span class="cl">8 行</span></div><pre><code>EventResult EventDetector::check_metrics(<span class="kw">const</span> SecondMetrics&amp; m) <span class="kw">noexcept</span> {
+    EventResult r;
+    r.laf_dB = m.LAF;
+    r.las_dB = m.LAS;
+
+    <span class="kw">const</span> <span class="kw">float</span> dt = (m.duration_s &gt; 0.0f) ? m.duration_s : 1.0f;
+    <span class="kw">const</span> <span class="kw">bool</span> laf_finite = <span class="kw">std</span>::isfinite(m.LAF);
+    <span class="kw">const</span> <span class="kw">bool</span> las_finite = <span class="kw">std</span>::isfinite(m.LAS);</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">D2</span>D2 · 脉冲指标</h4><p><b>LAF − LAS</b>：Fast 比 Slow 高多少。脉冲噪声时 Fast 冲高而 Slow 滞后，差值放大。</p><p>这是区分「持续噪声」与「脉冲噪声」的核心特征量。</p></div><div class="cd"><div class="csrc"><code>src/event_detector.cpp:208–211</code><span class="cl">4 行</span></div><pre><code>    <span class="cmt">//--- D2: 脉冲指标 = LAF − LAS ---</span>
+    <span class="kw">if</span> (laf_finite &amp;&amp; las_finite) {
+        r.impulse_metric_dB = m.LAF - m.LAS;
+    }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">D3</span>D3 · LAF 上升率</h4><p>与 <b>500 ms 前</b>的 LAF 比较。<code>lookback_laf(0.5f)</code> 查环形缓冲。</p><p>只在累计时间 &gt; 0.5 s 后才算 —— 否则没有历史可比。</p></div><div class="cd"><div class="csrc"><code>src/event_detector.cpp:213–219</code><span class="cl">7 行</span></div><pre><code>    <span class="cmt">//--- D3: LAF 上升率（相对 500 ms 前）---</span>
+    <span class="kw">if</span> (laf_finite &amp;&amp; cumulative_time_s_ &gt; 0.5f) {
+        <span class="kw">const</span> <span class="kw">float</span> past = lookback_laf(0.5f);
+        <span class="kw">if</span> (<span class="kw">std</span>::isfinite(past)) {
+            r.laf_rise_dB = m.LAF - past;
+        }
+    }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">D4</span>D4 · 背景对比</h4><p>维护一个 <b>5 分钟指数平均</b>背景 <code>background_laeq_db_</code>，用当前 LAF 减背景得增量。</p><p class="key">这一步会<b>更新成员状态</b>（<code>update_background</code>），所以 check_metrics 不是纯函数。</p></div><div class="cd"><div class="csrc"><code>src/event_detector.cpp:221–227</code><span class="cl">7 行</span></div><pre><code>    <span class="cmt">//--- D4: 背景对比（5 min 指数平均）---</span>
+    <span class="kw">if</span> (<span class="kw">std</span>::isfinite(m.LAeq)) {
+        update_background(m.LAeq, dt);
+    }
+    <span class="kw">if</span> (background_initialized_ &amp;&amp; laf_finite &amp;&amp; <span class="kw">std</span>::isfinite(background_laeq_db_)) {
+        r.background_delta_dB = m.LAF - background_laeq_db_;
+    }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">D5</span>四个判据的阈值比较</h4><p>把四个特征量各自与配置阈值比较，得到一组布尔量：</p><ul><li>D1 LAF 绝对阈值 → severe / moderate / minor</li><li>D2 脉冲指标 → severe / minor</li><li>D3 上升率 → moderate / minor</li><li>D4 背景增量 → 单一档</li></ul></div><div class="cd"><div class="csrc"><code>src/event_detector.cpp:229–243</code><span class="cl">15 行</span></div><pre><code>    <span class="cmt">//--- D1: LAF 阈值 ---</span>
+    <span class="kw">const</span> <span class="kw">bool</span> laf_severe   = laf_finite &amp;&amp; (m.LAF &gt;= config_.laf_severe_db);
+    <span class="kw">const</span> <span class="kw">bool</span> laf_moderate = laf_finite &amp;&amp; (m.LAF &gt;= config_.laf_moderate_db);
+    <span class="kw">const</span> <span class="kw">bool</span> laf_minor    = laf_finite &amp;&amp; (m.LAF &gt;= config_.laf_minor_db);
+
+    <span class="cmt">//--- D2 触发 ---</span>
+    <span class="kw">const</span> <span class="kw">bool</span> impulse_severe = (r.impulse_metric_dB &gt;= config_.impulse_severe_db);
+    <span class="kw">const</span> <span class="kw">bool</span> impulse_minor  = (r.impulse_metric_dB &gt;= config_.impulse_minor_db);
+
+    <span class="cmt">//--- D3 触发 ---</span>
+    <span class="kw">const</span> <span class="kw">bool</span> rise_moderate = (r.laf_rise_dB &gt;= config_.laf_rise_moderate_db);
+    <span class="kw">const</span> <span class="kw">bool</span> rise_minor    = (r.laf_rise_dB &gt;= config_.laf_rise_minor_db);
+
+    <span class="cmt">//--- D4 触发 ---</span>
+    <span class="kw">const</span> <span class="kw">bool</span> bg_trigger = (r.background_delta_dB &gt;= config_.background_delta_db);</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">D6</span>分级（取最高档）</h4><p>按 <b>severe → moderate → minor → NONE</b> 顺序短路判断，等价于取最高严重度。</p><p class="tip">注意 D1/D2 共享 severe 档，D3/D4 只到 moderate/minor。</p></div><div class="cd"><div class="csrc"><code>src/event_detector.cpp:245–254</code><span class="cl">10 行</span></div><pre><code>    <span class="cmt">//--- 分级（取最高档）---</span>
+    <span class="kw">if</span> (laf_severe || impulse_severe) {
+        r.event_type = EventType::SEVERE;
+    } <span class="kw">else</span> <span class="kw">if</span> (laf_moderate || rise_moderate) {
+        r.event_type = EventType::MODERATE;
+    } <span class="kw">else</span> <span class="kw">if</span> (laf_minor || rise_minor || impulse_minor || bg_trigger) {
+        r.event_type = EventType::MINOR;
+    } <span class="kw">else</span> {
+        r.event_type = EventType::NONE;
+    }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">D7</span>触发标志与过载直通</h4><p>四个 <code>trigger_*</code> 标志写回，便于上层知道是哪个判据触发。</p><p class="key">过载直通：<code>LZPeak ≥ 阈值</code> 时强制提升为 SEVERE —— 与 check_segment 的过载优先级一致。</p></div><div class="cd"><div class="csrc"><code>src/event_detector.cpp:256–265</code><span class="cl">10 行</span></div><pre><code>    r.trigger_laf_threshold = laf_minor;
+    r.trigger_impulse       = impulse_minor;
+    r.trigger_onset         = rise_minor;
+    r.trigger_background    = bg_trigger;
+
+    <span class="cmt">//--- 兼容：过载直通 ---</span>
+    r.is_overload = <span class="kw">std</span>::isfinite(m.LZPeak) &amp;&amp; (m.LZPeak &gt;= config_.peak_threshold_db);
+    <span class="kw">if</span> (r.is_overload &amp;&amp; r.event_type &lt; EventType::SEVERE) {
+        r.event_type = EventType::SEVERE;
+    }</code></pre></div></div>
+<div class="seg"><div class="ex"><h4><span class="stag">D8</span>严重度评分与历史更新</h4><p><code>grade_severity()</code> 按配置权重算出 0–100 分。</p><p class="key">最后把本次 LAF 压入环形缓冲（<code>push_laf_history</code>），供后续 lookback 使用 —— 这是 D3 判据的状态来源。</p></div><div class="cd"><div class="csrc"><code>src/event_detector.cpp:267–277</code><span class="cl">11 行</span></div><pre><code>    r.severity = grade_severity(r, config_);
+
+    <span class="cmt">//--- 更新历史（本次样本供后续 lookback 使用）---</span>
+    <span class="kw">if</span> (laf_finite) {
+        push_laf_history(m.LAF, dt);
+    } <span class="kw">else</span> {
+        cumulative_time_s_ += dt;
+    }
+
+    <span class="kw">return</span> r;
+}</code></pre></div></div>
+<h3>其余入口与内部实现</h3>
+<h4 class="blk"><code>check_metrics(const float*, const float*)</code> —— 设备侧重载（无需 NoiseProcessor）</h4>
+<div class="csrc">设备侧重载<code>src/event_detector.cpp:156–193</code><span class="cl">38 行</span></div><pre><code>EventResult EventDetector::check_metrics(<span class="kw">const</span> <span class="kw">float</span>* start, <span class="kw">const</span> <span class="kw">float</span>* end) <span class="kw">noexcept</span> {
+    <span class="kw">const</span> <span class="kw">std</span>::ptrdiff_t n = end - start;
+    <span class="kw">if</span> (n &lt;= 0) {
+        <span class="kw">return</span> EventResult{};
+    }
+
+    <span class="kw">const</span> <span class="kw">float</span> p_ref = config_.reference_pressure;
+    <span class="kw">float</span> sum_a_sq = 0.0f;
+    <span class="kw">float</span> peak_z_lin = 0.0f;
+
+    <span class="cmt">// 逐样本：A 计权（4 段 biquad） + Fast/Slow 指数时间计权</span>
+    <span class="kw">for</span> (<span class="kw">const</span> <span class="kw">float</span>* p = start; p &lt; end; ++p) {
+        <span class="kw">const</span> <span class="kw">float</span> z  = *p;
+        <span class="kw">const</span> <span class="kw">float</span> a  = a_chain_.process(z) * a_gain_;
+        <span class="kw">const</span> <span class="kw">float</span> a2 = a * a;
+
+        sum_a_sq += a2;
+        laf_sq_ = alpha_F_ * laf_sq_ + (1.0f - alpha_F_) * a2;
+        las_sq_ = alpha_S_ * las_sq_ + (1.0f - alpha_S_) * a2;
+
+        <span class="kw">const</span> <span class="kw">float</span> az = <span class="kw">std</span>::abs(z);
+        <span class="kw">if</span> (az &gt; peak_z_lin) peak_z_lin = az;
+    }
+
+    <span class="cmt">// 组装最小 SecondMetrics，复用四维度判定逻辑</span>
+    SecondMetrics m;
+    <span class="kw">const</span> <span class="kw">int</span> fs = (config_.sample_rate &gt; 0) ? config_.sample_rate : 48000;
+    m.duration_s = static_cast&lt;<span class="kw">float</span>&gt;(n) / static_cast&lt;<span class="kw">float</span>&gt;(fs);
+    m.n_samples  = static_cast&lt;<span class="kw">int32_t</span>&gt;(n);
+    m.LAF    = power_to_db(laf_sq_, p_ref);
+    m.LAS    = power_to_db(las_sq_, p_ref);
+    m.LAeq   = power_to_db(sum_a_sq / static_cast&lt;<span class="kw">float</span>&gt;(n), p_ref);
+    m.LZPeak = (peak_z_lin &gt; 0.0f)
+                   ? (20.0f * <span class="kw">std</span>::log10(peak_z_lin / p_ref))
+                   : -<span class="kw">std</span>::numeric_limits&lt;<span class="kw">float</span>&gt;::infinity();
+
+    <span class="kw">return</span> check_metrics(m);
+}</code></pre>
+<h4 class="blk">类声明（公开接口全貌）</h4>
+<div class="csrc">EventDetector 类<code>include/event_detector.hpp:155–274</code><span class="cl">120 行</span></div><pre><code><span class="kw">class</span> EventDetector {
+<span class="kw">public</span>:
+    /**
+     * @brief Constructor
+     * @param config Event detection configuration (default: all defaults)
+     */
+    <span class="kw">explicit</span> EventDetector(<span class="kw">const</span> EventDetectorConfig&amp; config = EventDetectorConfig{}) <span class="kw">noexcept</span>;
+
+    /**
+     * @brief Check <span class="kw">if</span> current segment has anomaly
+     *
+     * Lightweight interface: returns anomaly type or NORMAL.
+     * Zero heap allocation, all state in <span class="kw">class</span> members.
+     *
+     * @param buffer_start Pointer to start of PCM buffer (<span class="kw">float</span> samples, Z-weighted Pa)
+     * @param buffer_end Pointer to end of PCM buffer
+     * @<span class="kw">return</span> EventCheckResult: NORMAL or anomaly type
+     */
+    EventCheckResult check_segment(<span class="kw">const</span> <span class="kw">float</span>* buffer_start,
+                                    <span class="kw">const</span> <span class="kw">float</span>* buffer_end) <span class="kw">noexcept</span>;
+
+    /**
+     * @brief v3.3.3: 基于 LAF/LAS 的多维度事件检测（已算好的指标）
+     *
+     * 四个判定维度：
+     *   D1  LAF 阈值（85 / 95 / 110 dB 三档）
+     *   D2  脉冲指标（LAF − LAS &gt; 6 / 12 dB）
+     *   D3  LAF 上升率（相对 500 ms 前 &gt; 10 / 15 dB）
+     *   D4  背景对比（LAF − 5 min 指数平均背景 &gt; 15 dB）
+     *
+     * 输入为 v3.3.2 起 NoiseProcessor 输出的 SecondMetrics（含 LAF/LAS 字段）。
+     * 本接口与 NoiseProcessor 解耦（调用方负责把 result 写回 metric.event_type）。
+     *
+     * @param m 当前秒的 SecondMetrics（使用 LAF / LAS / LAeq / LZPeak / duration_s）
+     * @<span class="kw">return</span> EventResult（分级 + 四维度原始值 + 触发标志）
+     */
+    EventResult check_metrics(<span class="kw">const</span> SecondMetrics&amp; m) <span class="kw">noexcept</span>;
+
+    /**
+     * @brief v3.3.3: 基于 LAF/LAS 的多维度事件检测（原始缓冲区）
+     *
+     * 与上一个重载等价的 **设备侧接口**：只需传 buf/end，无需 NoiseProcessor。
+     * 内部用自带的轻量 A 计权 biquad 链 + Fast/Slow 时间计权状态，
+     * 逐样本算出 LAF / LAS / LAeq / LZPeak，再走同一个四维度判定。
+     *
+     * 内存开销（与 NoiseProcessor 无关）：
+     *   4 段 biquad 系数 96 B + 状态 32 B + 时间计权 16 B ≈ 150 B
+     *
+     * @param start 缓冲区起始（<span class="kw">float</span>，Pa，Z 计权）
+     * @param end   缓冲区结尾
+     * @<span class="kw">return</span> EventResult
+     */
+    EventResult check_metrics(<span class="kw">const</span> <span class="kw">float</span>* start, <span class="kw">const</span> <span class="kw">float</span>* end) <span class="kw">noexcept</span>;
+
+    /**
+     * @brief Reset detector state (clear all counters and flags)
+     */
+    <span class="kw">void</span> reset() <span class="kw">noexcept</span>;
+
+    /**
+     * @brief Check <span class="kw">if</span> an IMPULSE_SUSPECT or OVERLOAD was detected and not yet cleared
+     * @<span class="kw">return</span> <span class="kw">true</span> until clear_impulse_flag() or reset()
+     */
+    <span class="kw">bool</span> was_impulse_detected() <span class="kw">const</span> <span class="kw">noexcept</span> { <span class="kw">return</span> impulse_detected_; }
+
+    /**
+     * @brief Clear impulse flag (call after marking start point)
+     */
+    <span class="kw">void</span> clear_impulse_flag() <span class="kw">noexcept</span> { impulse_detected_ = <span class="kw">false</span>; }
+
+    /**
+     * @brief Get current configuration reference
+     */
+    <span class="kw">const</span> EventDetectorConfig&amp; config() <span class="kw">const</span> { <span class="kw">return</span> config_; }
+
+<span class="kw">private</span>:
+    EventDetectorConfig config_;  <span class="cmt">///&lt; Configuration (copied for independence)</span>
+
+    <span class="cmt">//=== 去抖动状态 ===</span>
+    <span class="kw">uint8_t</span> consecutive_anomaly_count_{0}; <span class="cmt">///&lt; 连续异常帧数</span>
+    <span class="kw">uint8_t</span> cooldown_remaining_{0};        <span class="cmt">///&lt; 冷却剩余帧数</span>
+
+    <span class="cmt">//=== 标志 ===</span>
+    <span class="kw">bool</span> impulse_detected_{<span class="kw">false</span>}; <span class="cmt">///&lt; 已触发且未清除</span>
+
+    <span class="cmt">//=== v3.3.3: LAF 上升率历史（环形缓冲）===</span>
+    <span class="kw">static</span> <span class="kw">constexpr</span> <span class="kw">size_t</span> LAF_HISTORY_SIZE = 16;
+    <span class="kw">float</span> laf_history_[LAF_HISTORY_SIZE]{};   <span class="cmt">///&lt; LAF 历史（dB）</span>
+    <span class="kw">float</span> time_history_[LAF_HISTORY_SIZE]{};  <span class="cmt">///&lt; 对应累计时间（s）</span>
+    <span class="kw">size_t</span> history_write_idx_{0};
+    <span class="kw">size_t</span> history_count_{0};
+    <span class="kw">float</span> cumulative_time_s_{0.0f};           <span class="cmt">///&lt; 累计已处理时长</span>
+
+    <span class="cmt">//=== v3.3.3: 5 min 指数平均背景 ===</span>
+    <span class="kw">float</span> background_power_{0.0f};       <span class="cmt">///&lt; LAeq 的功率域指数平均</span>
+    <span class="kw">float</span> background_laeq_db_{-INFINITY}; <span class="cmt">///&lt; 背景 LAeq（dB）</span>
+    <span class="kw">bool</span> background_initialized_{<span class="kw">false</span>};
+
+    <span class="cmt">//=== v3.3.3: 内置轻量 A 计权链（供 buf/end 重载使用）===</span>
+    BiquadChain&lt;A_WEIGHTING_SECTIONS&gt; a_chain_;  <span class="cmt">///&lt; A 计权 4 段 biquad（自带状态）</span>
+    <span class="kw">float</span> a_gain_{1.0f};                          <span class="cmt">///&lt; 1 kHz 归一化增益</span>
+    <span class="kw">float</span> laf_sq_{0.0f};                          <span class="cmt">///&lt; Fast 时间计权功率状态</span>
+    <span class="kw">float</span> las_sq_{0.0f};                          <span class="cmt">///&lt; Slow 时间计权功率状态</span>
+    <span class="kw">float</span> alpha_F_{0.0f};                         <span class="cmt">///&lt; Fast α = exp(−1/(0.125·fs))</span>
+    <span class="kw">float</span> alpha_S_{0.0f};                         <span class="cmt">///&lt; Slow α = exp(−1/(1.0·fs))</span>
+
+    <span class="cmt">//=== 内部计算 ===</span>
+    <span class="kw">float</span> compute_leq(<span class="kw">const</span> <span class="kw">float</span>* start, <span class="kw">const</span> <span class="kw">float</span>* end) <span class="kw">const</span> <span class="kw">noexcept</span>;
+    <span class="kw">float</span> compute_peak(<span class="kw">const</span> <span class="kw">float</span>* start, <span class="kw">const</span> <span class="kw">float</span>* end) <span class="kw">const</span> <span class="kw">noexcept</span>;
+    <span class="kw">static</span> <span class="kw">uint8_t</span> required_debounce_frames(<span class="kw">uint8_t</span> debounce_frames) <span class="kw">noexcept</span>;
+
+    <span class="cmt">//=== v3.3.3 内部辅助 ===</span>
+    <span class="kw">void</span> init_internal_chain() <span class="kw">noexcept</span>;
+    <span class="kw">static</span> <span class="kw">float</span> power_to_db(<span class="kw">float</span> power_sq, <span class="kw">float</span> p_ref) <span class="kw">noexcept</span>;
+    <span class="kw">void</span> push_laf_history(<span class="kw">float</span> laf_db, <span class="kw">float</span> dt) <span class="kw">noexcept</span>;
+    <span class="kw">float</span> lookback_laf(<span class="kw">float</span> seconds_ago) <span class="kw">const</span> <span class="kw">noexcept</span>;
+    <span class="kw">void</span> update_background(<span class="kw">float</span> laeq_db, <span class="kw">float</span> dt) <span class="kw">noexcept</span>;
+    <span class="kw">static</span> <span class="kw">uint8_t</span> grade_severity(<span class="kw">const</span> EventResult&amp; r,
+                                   <span class="kw">const</span> EventDetectorConfig&amp; c) <span class="kw">noexcept</span>;
+};</code></pre>
+<h4 class="blk"><code>init_internal_chain()</code> —— 内置轻量 A 计权链</h4>
+<div class="csrc">初始化内部 A 计权链<code>src/event_detector.cpp:23–66</code><span class="cl">44 行</span></div><pre><code><span class="kw">void</span> EventDetector::init_internal_chain() <span class="kw">noexcept</span> {
+    <span class="kw">const</span> <span class="kw">int</span> fs = (config_.sample_rate &gt; 0) ? config_.sample_rate : 48000;
+
+    <span class="cmt">// v3.3.4: 默认先填 48 kHz 表（保证任何情况下都有合法系数）。</span>
+    <span class="cmt">// 原先这里用的是 filter_coefficients_48k.hpp 的 A_WEIGHTING_48K ——</span>
+    <span class="cmt">// 那是「未归一化」副本，且 a_gain_ 写死 1.0，非 48 kHz 回落时会偏高 2.43 dB。</span>
+    <span class="cmt">// 现统一改用 WEIGHTING_TABLE（系数与 1 kHz 增益成对，单一数据源）。</span>
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; A_WEIGHTING_SECTIONS; ++i) {
+        a_chain_.sections[i] = BiquadCoefficients{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+    }
+    a_gain_ = 1.0f;
+    <span class="kw">if</span> (<span class="kw">const</span> <span class="kw">auto</span>* def = find_weighting_entry(48000)) {
+        <span class="kw">for</span> (<span class="kw">int</span> i = 0; i &lt; def-&gt;a_count &amp;&amp; i &lt; static_cast&lt;<span class="kw">int</span>&gt;(A_WEIGHTING_SECTIONS); ++i) {
+            a_chain_.sections[i].b0 = def-&gt;a[i].b0;
+            a_chain_.sections[i].b1 = def-&gt;a[i].b1;
+            a_chain_.sections[i].b2 = def-&gt;a[i].b2;
+            a_chain_.sections[i].a0 = 1.0f;
+            a_chain_.sections[i].a1 = def-&gt;a[i].a1;
+            a_chain_.sections[i].a2 = def-&gt;a[i].a2;
+        }
+        a_gain_ = def-&gt;a_gain;
+    }
+
+    <span class="cmt">// 优先查目标采样率表（v3.3.4 起仅 48000）</span>
+    <span class="kw">if</span> (<span class="kw">const</span> <span class="kw">auto</span>* entry = find_weighting_entry(fs)) {
+        <span class="kw">for</span> (<span class="kw">int</span> i = 0; i &lt; entry-&gt;a_count &amp;&amp; i &lt; static_cast&lt;<span class="kw">int</span>&gt;(A_WEIGHTING_SECTIONS); ++i) {
+            a_chain_.sections[i].b0 = entry-&gt;a[i].b0;
+            a_chain_.sections[i].b1 = entry-&gt;a[i].b1;
+            a_chain_.sections[i].b2 = entry-&gt;a[i].b2;
+            a_chain_.sections[i].a0 = 1.0f;
+            a_chain_.sections[i].a1 = entry-&gt;a[i].a1;
+            a_chain_.sections[i].a2 = entry-&gt;a[i].a2;
+        }
+        a_gain_ = entry-&gt;a_gain;
+    }
+
+    <span class="cmt">// 指数时间计权 α（IEC 61672-1 §7）</span>
+    alpha_F_ = <span class="kw">std</span>::exp(-1.0f / (0.125f * static_cast&lt;<span class="kw">float</span>&gt;(fs)));
+    alpha_S_ = <span class="kw">std</span>::exp(-1.0f / (1.0f   * static_cast&lt;<span class="kw">float</span>&gt;(fs)));
+
+    a_chain_.reset();
+    laf_sq_ = 0.0f;
+    las_sq_ = 0.0f;
+}</code></pre>
+<h4 class="blk"><code>grade_severity()</code> —— 严重度评分</h4>
+<div class="csrc">grade_severity<code>src/event_detector.cpp:328–373</code><span class="cl">46 行</span></div><pre><code><span class="kw">uint8_t</span> EventDetector::grade_severity(<span class="kw">const</span> EventResult&amp; r,
+                                       <span class="kw">const</span> EventDetectorConfig&amp; c) <span class="kw">noexcept</span> {
+    <span class="kw">if</span> (r.event_type == EventType::NONE) <span class="kw">return</span> 0;
+
+    <span class="cmt">// 严重程度评分（0-100）：取四个维度中“超出幅度最大者”的归一化值</span>
+    <span class="kw">float</span> score = 0.0f;
+
+    <span class="cmt">// D1: LAF 从 minor 到 severe 映射到 20 → 100</span>
+    <span class="kw">if</span> (<span class="kw">std</span>::isfinite(r.laf_dB) &amp;&amp; c.laf_severe_db &gt; c.laf_minor_db) {
+        <span class="kw">const</span> <span class="kw">float</span> t = (r.laf_dB - c.laf_minor_db) / (c.laf_severe_db - c.laf_minor_db);
+        score = <span class="kw">std</span>::max(score, 20.0f + 80.0f * <span class="kw">std</span>::min(<span class="kw">std</span>::max(t, 0.0f), 1.0f));
+    }
+
+    <span class="cmt">// D2: 脉冲指标 从 minor 到 severe 映射到 20 → 100</span>
+    <span class="kw">if</span> (c.impulse_severe_db &gt; c.impulse_minor_db) {
+        <span class="kw">const</span> <span class="kw">float</span> t = (r.impulse_metric_dB - c.impulse_minor_db) /
+                        (c.impulse_severe_db - c.impulse_minor_db);
+        <span class="kw">if</span> (t &gt; 0.0f) {
+            score = <span class="kw">std</span>::max(score, 20.0f + 80.0f * <span class="kw">std</span>::min(t, 1.0f));
+        }
+    }
+
+    <span class="cmt">// D3: 上升率 从 minor 到 2×moderate 映射到 20 → 80</span>
+    <span class="kw">if</span> (c.laf_rise_moderate_db &gt; c.laf_rise_minor_db) {
+        <span class="kw">const</span> <span class="kw">float</span> t = (r.laf_rise_dB - c.laf_rise_minor_db) /
+                        (2.0f * c.laf_rise_moderate_db - c.laf_rise_minor_db);
+        <span class="kw">if</span> (t &gt; 0.0f) {
+            score = <span class="kw">std</span>::max(score, 20.0f + 60.0f * <span class="kw">std</span>::min(t, 1.0f));
+        }
+    }
+
+    <span class="cmt">// D4: 背景差</span>
+    <span class="kw">if</span> (c.background_delta_db &gt; 0.0f) {
+        <span class="kw">const</span> <span class="kw">float</span> t = r.background_delta_dB / (2.0f * c.background_delta_db);
+        <span class="kw">if</span> (t &gt; 0.0f) {
+            score = <span class="kw">std</span>::max(score, 20.0f + 60.0f * <span class="kw">std</span>::min(t, 1.0f));
+        }
+    }
+
+    <span class="cmt">// 过载直接封顶</span>
+    <span class="kw">if</span> (r.is_overload) score = 100.0f;
+
+    <span class="kw">if</span> (score &lt; 0.0f)   score = 0.0f;
+    <span class="kw">if</span> (score &gt; 100.0f) score = 100.0f;
+    <span class="kw">return</span> static_cast&lt;<span class="kw">uint8_t</span>&gt;(score + 0.5f);
+}</code></pre>
+<h4 class="blk"><code>compute_leq()</code> / <code>compute_peak()</code></h4>
+<div class="csrc">compute_leq<code>src/event_detector.cpp:375–395</code><span class="cl">21 行</span></div><pre><code><span class="kw">float</span> EventDetector::compute_leq(<span class="kw">const</span> <span class="kw">float</span>* start, <span class="kw">const</span> <span class="kw">float</span>* end) <span class="kw">const</span> <span class="kw">noexcept</span> {
+    <span class="kw">float</span> sum_sq = 0.0f;
+    <span class="kw">int</span> count = 0;
+
+    <span class="kw">for</span> (<span class="kw">const</span> <span class="kw">float</span>* p = start; p &lt; end; ++p) {
+        sum_sq += (*p) * (*p);
+        ++count;
+    }
+
+    <span class="kw">if</span> (count == 0 || sum_sq &lt;= 0.0f) {
+        <span class="kw">return</span> -<span class="kw">std</span>::numeric_limits&lt;<span class="kw">float</span>&gt;::infinity();
+    }
+
+    <span class="kw">float</span> rms = <span class="kw">std</span>::sqrt(sum_sq / static_cast&lt;<span class="kw">float</span>&gt;(count));
+    <span class="kw">if</span> (rms &lt;= 0.0f) {
+        <span class="kw">return</span> -<span class="kw">std</span>::numeric_limits&lt;<span class="kw">float</span>&gt;::infinity();
+    }
+
+    <span class="kw">float</span> p0 = config_.reference_pressure;
+    <span class="kw">return</span> 20.0f * <span class="kw">std</span>::log10(rms / p0);
+}</code></pre>
+<div class="csrc">compute_peak<code>src/event_detector.cpp:397–413</code><span class="cl">17 行</span></div><pre><code><span class="kw">float</span> EventDetector::compute_peak(<span class="kw">const</span> <span class="kw">float</span>* start, <span class="kw">const</span> <span class="kw">float</span>* end) <span class="kw">const</span> <span class="kw">noexcept</span> {
+    <span class="kw">float</span> peak_abs = 0.0f;
+
+    <span class="kw">for</span> (<span class="kw">const</span> <span class="kw">float</span>* p = start; p &lt; end; ++p) {
+        <span class="kw">float</span> abs_val = <span class="kw">std</span>::abs(*p);
+        <span class="kw">if</span> (abs_val &gt; peak_abs) {
+            peak_abs = abs_val;
+        }
+    }
+
+    <span class="kw">if</span> (peak_abs &lt;= 0.0f) {
+        <span class="kw">return</span> -<span class="kw">std</span>::numeric_limits&lt;<span class="kw">float</span>&gt;::infinity();
+    }
+
+    <span class="kw">float</span> p0 = config_.reference_pressure;
+    <span class="kw">return</span> 20.0f * <span class="kw">std</span>::log10(peak_abs / p0);
+}</code></pre>
+<h4 class="blk"><code>reset()</code> —— 注意这里也 reset 了 a_chain_</h4>
+<div class="csrc">reset()<code>src/event_detector.cpp:135–154</code><span class="cl">20 行</span></div><pre><code><span class="kw">void</span> EventDetector::reset() <span class="kw">noexcept</span> {
+    consecutive_anomaly_count_ = 0;
+    cooldown_remaining_ = 0;
+    impulse_detected_ = <span class="kw">false</span>;
+    <span class="cmt">// v3.3.3</span>
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; LAF_HISTORY_SIZE; ++i) {
+        laf_history_[i] = 0.0f;
+        time_history_[i] = 0.0f;
+    }
+    history_write_idx_ = 0;
+    history_count_ = 0;
+    cumulative_time_s_ = 0.0f;
+    background_power_ = 0.0f;
+    background_laeq_db_ = -<span class="kw">std</span>::numeric_limits&lt;<span class="kw">float</span>&gt;::infinity();
+    background_initialized_ = <span class="kw">false</span>;
+    <span class="cmt">// v3.3.3: 内置 A 计权链 + 时间计权状态</span>
+    a_chain_.reset();
+    laf_sq_ = 0.0f;
+    las_sq_ = 0.0f;
+}</code></pre>
+<div class="warn"><b>第二套独立状态机</b><code>EventDetector</code> 内部有自己的 <code>a_chain_</code>、去抖动计数、LAF 环形缓冲、5 分钟背景。排查状态问题时不要只盯 <code>NoiseProcessor</code>。</div>
+<div class="pager"><button data-goto="p6">← 上一页</button><button data-goto="p8">下一页 →</button></div></div><div class="page" id="p8"><h2><span class="iface">接口四</span>DoseState + DoseCalculator —— 逐段讲解</h2>
+<p class="sub">跨时间累计剂量，按四套标准换算。<code>DoseState</code> 保存累计值，<code>DoseCalculator</code> 提供纯计算。</p>
+<h3>DoseState —— 累计状态</h3>
+<div class="csrc">DoseState 完整定义<code>include/dose_state.hpp:60–63</code><span class="cl">4 行</span></div><pre><code><span class="kw">struct</span> DoseState {
+    <span class="kw">float</span> cumulative_dose_frac;  <span class="cmt">///&lt; Σ D_i (dimensionless, can exceed 1.0)</span>
+    <span class="kw">float</span> elapsed_hours;         <span class="cmt">///&lt; Σ t_i in hours (monotonically increasing)</span>
+};</code></pre>
+<h3>DoseCalculator —— 全部静态方法</h3>
+<div class="csrc">DoseCalculator 类<code>include/dose_calculator.hpp:70–192</code><span class="cl">123 行</span></div><pre><code><span class="kw">class</span> DoseCalculator {
+<span class="kw">public</span>:
+    /**
+     * @brief Get profile by <span class="kw">enum</span> (returns reference to <span class="kw">constexpr</span> table, zero cost)
+     */
+    <span class="kw">static</span> <span class="kw">const</span> DoseProfile&amp; get_profile(DoseStandard standard) {
+        <span class="kw">return</span> DOSE_PROFILES[static_cast&lt;<span class="kw">size_t</span>&gt;(standard)];
+    }
+
+    /**
+     * @brief Calculate allowed exposure time
+     * Formula: T = Tref / 2^((L - Lc) / ER)
+     */
+    <span class="kw">static</span> <span class="kw">float</span> calculate_allowed_time(<span class="kw">float</span> laeq, <span class="kw">const</span> DoseProfile&amp; profile) {
+        <span class="kw">if</span> (laeq &lt; profile.threshold) {
+            <span class="kw">return</span> <span class="kw">std</span>::numeric_limits&lt;<span class="kw">float</span>&gt;::infinity();
+        }
+        <span class="kw">float</span> exponent = (laeq - profile.criterion_level) / profile.exchange_rate;
+        <span class="kw">return</span> profile.reference_duration / <span class="kw">std</span>::pow(2.0f, exponent);
+    }
+
+    /**
+     * @brief Calculate dose increment <span class="kw">for</span> a time period
+     * Formula: Dose% = 100 × (dt/Tref) × 2^((L - Lc) / ER)
+     */
+    <span class="kw">static</span> <span class="kw">float</span> calculate_dose_increment(<span class="kw">float</span> laeq, <span class="kw">float</span> duration_s,
+                                           <span class="kw">const</span> DoseProfile&amp; profile) {
+        <span class="kw">if</span> (laeq &lt; profile.threshold) {
+            <span class="kw">return</span> 0.0f;
+        }
+        <span class="kw">float</span> duration_h = duration_s / 3600.0f;
+        <span class="kw">float</span> exponent = (laeq - profile.criterion_level) / profile.exchange_rate;
+        <span class="kw">return</span> 100.0f * (duration_h / profile.reference_duration) * <span class="kw">std</span>::pow(2.0f, exponent);
+    }
+
+    /**
+     * @brief Calculate TWA from total dose (<span class="kw">enum</span>-based, no string lookup)
+     * NIOSH/ISO: TWA = 10 × log10(Dose%/100) + Lc
+     * OSHA: TWA = 16.61 × log10(Dose%/100) + Lc
+     */
+    <span class="kw">static</span> <span class="kw">float</span> calculate_twa(<span class="kw">float</span> total_dose_pct, DoseStandard standard) {
+        <span class="kw">if</span> (total_dose_pct &lt;= 0.0f) <span class="kw">return</span> 0.0f;
+        <span class="kw">const</span> <span class="kw">auto</span>&amp; profile = get_profile(standard);
+        <span class="kw">bool</span> is_osha = (standard == DoseStandard::OSHA_PEL ||
+                        standard == DoseStandard::OSHA_HCA);
+        <span class="kw">float</span> coeff = is_osha ? 16.61f : 10.0f;
+        <span class="kw">return</span> coeff * <span class="kw">std</span>::log10(total_dose_pct / 100.0f) + profile.criterion_level;
+    }
+
+    /**
+     * @brief Calculate TWA from total dose (profile-based)
+     * NIOSH/ISO: TWA = 10 × log10(Dose%/100) + Lc
+     * OSHA: TWA = 16.61 × log10(Dose%/100) + Lc
+     */
+    <span class="kw">static</span> <span class="kw">float</span> calculate_twa(<span class="kw">float</span> total_dose_pct, <span class="kw">const</span> DoseProfile&amp; profile,
+                                DoseStandard standard) {
+        <span class="kw">if</span> (total_dose_pct &lt;= 0.0f) <span class="kw">return</span> 0.0f;
+        <span class="kw">bool</span> is_osha = (standard == DoseStandard::OSHA_PEL ||
+                        standard == DoseStandard::OSHA_HCA);
+        <span class="kw">float</span> coeff = is_osha ? 16.61f : 10.0f;
+        <span class="kw">return</span> coeff * <span class="kw">std</span>::log10(total_dose_pct / 100.0f) + profile.criterion_level;
+    }
+
+    /**
+     * @brief Calculate LEX,8h from total dose
+     * Formula: LEX,8h = 10 × log10(Dose%/100) + Lc
+     */
+    <span class="kw">static</span> <span class="kw">float</span> calculate_lex(<span class="kw">float</span> total_dose_pct, <span class="kw">const</span> DoseProfile&amp; profile) {
+        <span class="kw">if</span> (total_dose_pct &lt;= 0.0f) <span class="kw">return</span> 0.0f;
+        <span class="kw">return</span> 10.0f * <span class="kw">std</span>::log10(total_dose_pct / 100.0f) + profile.criterion_level;
+    }
+
+    /**
+     * @brief Calculate dose from LEX,8h (reverse)
+     * Formula: Dose% = 100 × 10^((LEX,8h - Lc) / 10)
+     */
+    <span class="kw">static</span> <span class="kw">float</span> calculate_dose_from_lex(<span class="kw">float</span> lex, <span class="kw">const</span> DoseProfile&amp; profile) {
+        <span class="kw">return</span> 100.0f * <span class="kw">std</span>::pow(10.0f, (lex - profile.criterion_level) / 10.0f);
+    }
+
+    /**
+     * @brief Calculate all metrics <span class="kw">for</span> a given LAeq and duration
+     */
+    <span class="kw">static</span> DoseMetrics calculate_all_metrics(<span class="kw">float</span> laeq, <span class="kw">float</span> duration_s,
+                                              <span class="kw">const</span> DoseProfile&amp; profile,
+                                              DoseStandard standard) {
+        DoseMetrics metrics;
+        metrics.dose_pct = calculate_dose_increment(laeq, duration_s, profile);
+        metrics.dose_fraction = metrics.dose_pct / 100.0f;
+        metrics.allowed_time_h = calculate_allowed_time(laeq, profile);
+
+        <span class="kw">if</span> (duration_s &gt;= profile.reference_duration * 3600.0f) {
+            metrics.twa = laeq;
+            metrics.lex_8h = laeq;
+        } <span class="kw">else</span> {
+            metrics.twa = calculate_twa(metrics.dose_pct, profile, standard);
+            metrics.lex_8h = calculate_lex(metrics.dose_pct, profile);
+        }
+        <span class="kw">return</span> metrics;
+    }
+
+    <span class="cmt">// ==================== PC-only string-based API ====================</span>
+#ifndef NOISE_EMBEDDED_BUILD
+    /**
+     * @brief Parse standard name string to <span class="kw">enum</span> (config-time only)
+     */
+    <span class="kw">static</span> DoseStandard parse_standard(<span class="kw">const</span> <span class="kw">char</span>* name);
+
+    /**
+     * @brief Get profile by standard name (PC convenience)
+     */
+    <span class="kw">static</span> DoseProfile get_profile(<span class="kw">const</span> <span class="kw">char</span>* standard) {
+        <span class="kw">return</span> get_profile(parse_standard(standard));
+    }
+
+    /**
+     * @brief Calculate TWA from total dose (string-based, PC convenience)
+     */
+    <span class="kw">static</span> <span class="kw">float</span> calculate_twa(<span class="kw">float</span> total_dose_pct, <span class="kw">const</span> <span class="kw">char</span>* standard) {
+        <span class="kw">return</span> calculate_twa(total_dose_pct, parse_standard(standard));
+    }
+#endif
+};</code></pre>
+<h3>实现：标准解析与自由函数</h3>
+<div class="csrc">parse_standard —— 字符串 → 枚举<code>src/dose_calculator.cpp:14–20</code><span class="cl">7 行</span></div><pre><code>DoseStandard DoseCalculator::parse_standard(<span class="kw">const</span> <span class="kw">char</span>* name) {
+    <span class="kw">if</span> (<span class="kw">std</span>::strcmp(name, "NIOSH") == 0) <span class="kw">return</span> DoseStandard::NIOSH;
+    <span class="kw">if</span> (<span class="kw">std</span>::strcmp(name, "OSHA_PEL") == 0) <span class="kw">return</span> DoseStandard::OSHA_PEL;
+    <span class="kw">if</span> (<span class="kw">std</span>::strcmp(name, "OSHA_HCA") == 0) <span class="kw">return</span> DoseStandard::OSHA_HCA;
+    <span class="kw">if</span> (<span class="kw">std</span>::strcmp(name, "EU_ISO") == 0) <span class="kw">return</span> DoseStandard::EU_ISO;
+    <span class="kw">return</span> DoseStandard::NIOSH;  <span class="cmt">// default fallback</span>
+}</code></pre>
+<div class="csrc">calculate_noise_dose<code>src/dose_calculator.cpp:22–27</code><span class="cl">6 行</span></div><pre><code><span class="kw">float</span> calculate_noise_dose(<span class="kw">float</span> laeq, <span class="kw">float</span> duration_h, <span class="kw">const</span> <span class="kw">char</span>* standard) {
+    <span class="kw">auto</span> <span class="kw">std</span> = DoseCalculator::parse_standard(standard);
+    <span class="kw">const</span> <span class="kw">auto</span>&amp; profile = DoseCalculator::get_profile(<span class="kw">std</span>);
+    <span class="kw">float</span> duration_s = duration_h * 3600.0f;
+    <span class="kw">return</span> DoseCalculator::calculate_dose_increment(laeq, duration_s, profile);
+}</code></pre>
+<div class="csrc">calculate_twa_from_dose<code>src/dose_calculator.cpp:29–32</code><span class="cl">4 行</span></div><pre><code><span class="kw">float</span> calculate_twa_from_dose(<span class="kw">float</span> total_dose_pct, <span class="kw">const</span> <span class="kw">char</span>* standard) {
+    <span class="kw">auto</span> <span class="kw">std</span> = DoseCalculator::parse_standard(standard);
+    <span class="kw">return</span> DoseCalculator::calculate_twa(total_dose_pct, <span class="kw">std</span>);
+}</code></pre>
+<h3>四套标准参数</h3>
+<div class="csrc">DoseProfile 与预设档位<code>include/dose_calculator.hpp:33–38</code><span class="cl">6 行</span></div><pre><code><span class="kw">struct</span> DoseProfile {
+    <span class="kw">float</span> criterion_level;     <span class="cmt">// Lc (dBA)</span>
+    <span class="kw">float</span> exchange_rate;       <span class="cmt">// ER (dB)</span>
+    <span class="kw">float</span> threshold;           <span class="cmt">// LT (dBA)</span>
+    <span class="kw">float</span> reference_duration;  <span class="cmt">// Tref (hours)</span>
+};</code></pre>
+<table><thead><tr><th>标准</th><th>字段</th><th>判据</th></tr></thead><tbody><tr><td>NIOSH</td><td class="n">dose_frac_niosh</td><td>85 dBA / 3 dB 交换率</td></tr><tr><td>OSHA PEL</td><td class="n">dose_frac_osha_pel</td><td>90 dBA / 5 dB 交换率</td></tr><tr><td>OSHA HCA</td><td class="n">dose_frac_osha_hca</td><td>听力保护判据</td></tr><tr><td>EU / ISO</td><td class="n">dose_frac_eu_iso</td><td>80 dB 下限</td></tr></tbody></table>
+<div class="note"><b>依赖关系</b><code>DoseState</code> 的 TWA / LEX 委托 <code>DoseCalculator</code>；单块剂量增量由 <b>Phase 3</b> 直接调 <code>calculate_dose_increment()</code> 填入 <code>SecondMetrics.dose_frac_*</code>。独立校验：<code>validation/validate_dose_calculator.py</code>。</div>
+<div class="pager"><button data-goto="p7">← 上一页</button><button data-goto="p9">下一页 →</button></div></div><div class="page" id="p9"><h2>滤波基础设施 —— 逐段讲解</h2>
+<p class="sub">状态真正存放的地方，也是 20 Hz 问题的物理根源。</p>
+<h3>BiquadChain&lt;N&gt; —— 持有状态的容器</h3>
+<div class="csrc">BiquadChain（模板 + process 实现）<code>include/filter_coefficients_48k.hpp:38–60</code><span class="cl">23 行</span></div><pre><code><span class="kw">struct</span> BiquadChain {
+    BiquadCoefficients sections[SECTIONS];
+    <span class="kw">float</span> state[SECTIONS * 2];  <span class="cmt">// Transposed Direct Form II state (x1,x2 per section)</span>
+
+    /** @brief Reset all state to zero */
+    <span class="kw">void</span> reset() {
+        <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; SECTIONS * 2; ++i) state[i] = 0.0f;
+    }
+
+    /** @brief Process a single sample through the chain (a0 must be 1.0) */
+    <span class="kw">float</span> process(<span class="kw">float</span> input) {
+        <span class="kw">float</span> x = input;
+        <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; SECTIONS; ++i) {
+            <span class="kw">const</span> <span class="kw">auto</span>&amp; s = sections[i];
+            <span class="kw">float</span>* st = &amp;state[i * 2];
+            <span class="kw">float</span> y = s.b0 * x + st[0];
+            st[0] = s.b1 * x - s.a1 * y + st[1];
+            st[1] = s.b2 * x - s.a2 * y;
+            x = y;
+        }
+        <span class="kw">return</span> x;
+    }
+};</code></pre>
+<div class="seg"><div class="ex"><h4>BiquadFilter::reset()</h4><p>把 <code>z1_</code> / <code>z2_</code> 双状态清零。</p><p class="key">这一行就是「滤波器重新启动」的全部含义。</p></div><div class="cd"><div class="csrc"><code>src/iir_filter.cpp:115–117</code><span class="cl">3 行</span></div><pre><code><span class="kw">void</span> BiquadFilter::reset() {
+    x1_ = x2_ = y1_ = y2_ = 0.0f;
+}</code></pre></div></div>
+<div class="seg"><div class="ex"><h4>BiquadFilter::process()</h4><p>转置直接 II 型：</p><p><code>y = b0·x + z1</code><br><code>z1 = b1·x − a1·y + z2</code><br><code>z2 = b2·x − a2·y</code></p><p>每样本只做 5 次乘加，且 <code>a0</code> 预归一化为 1，无需除法。</p><p class="key">状态 <code>z1/z2</code> 就是滤波器的「记忆」—— 清零即重新启动。</p></div><div class="cd"><div class="csrc"><code>src/iir_filter.cpp:119–126</code><span class="cl">8 行</span></div><pre><code><span class="kw">float</span> BiquadFilter::process(<span class="kw">float</span> input) {
+    <span class="cmt">// Transposed Direct Form II</span>
+    <span class="kw">float</span> output = b0_ * input + x1_;
+    x1_ = b1_ * input - a1_ * output + x2_;
+    x2_ = b2_ * input - a2_ * output;
+
+    <span class="kw">return</span> output;
+}</code></pre></div></div>
+<div class="seg"><div class="ex"><h4>BiquadFilter::process(vector)</h4><p>对整段信号逐样本调用上面的标量版本，返回新 vector。</p><p class="tip">离线分析用，非实时路径。</p></div><div class="cd"><div class="csrc"><code>src/iir_filter.cpp:128–137</code><span class="cl">10 行</span></div><pre><code><span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; BiquadFilter::process(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal) {
+    <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; result;
+    result.reserve(signal.size());
+
+    <span class="kw">for</span> (<span class="kw">float</span> x : signal) {
+        result.push_back(process(x));
+    }
+
+    <span class="kw">return</span> result;
+}</code></pre></div></div>
+<h4 class="blk">BiquadFilter 类声明</h4>
+<div class="csrc">BiquadFilter 类<code>include/iir_filter.hpp:84–106</code><span class="cl">23 行</span></div><pre><code><span class="kw">class</span> BiquadFilter {
+<span class="kw">public</span>:
+    BiquadFilter(<span class="kw">float</span> b0, <span class="kw">float</span> b1, <span class="kw">float</span> b2, <span class="kw">float</span> a0, <span class="kw">float</span> a1, <span class="kw">float</span> a2);
+    <span class="kw">explicit</span> BiquadFilter(<span class="kw">const</span> BiquadCoefficients&amp; coef);
+
+    <span class="kw">float</span> process(<span class="kw">float</span> input);
+    <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; process(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal);
+    <span class="kw">void</span> reset();
+
+    <span class="cmt">// Coefficient accessors (v3.2: needed for per-band peak-gain correction)</span>
+    <span class="kw">float</span> b0() <span class="kw">const</span> { <span class="kw">return</span> b0_; }
+    <span class="kw">float</span> b1() <span class="kw">const</span> { <span class="kw">return</span> b1_; }
+    <span class="kw">float</span> b2() <span class="kw">const</span> { <span class="kw">return</span> b2_; }
+    <span class="kw">float</span> a0() <span class="kw">const</span> { <span class="kw">return</span> a0_; }
+    <span class="kw">float</span> a1() <span class="kw">const</span> { <span class="kw">return</span> a1_; }
+    <span class="kw">float</span> a2() <span class="kw">const</span> { <span class="kw">return</span> a2_; }
+
+<span class="kw">private</span>:
+    <span class="kw">float</span> b0_, b1_, b2_;
+    <span class="kw">float</span> a0_, a1_, a2_;
+    <span class="kw">float</span> x1_, x2_;  <span class="cmt">// Input delay</span>
+    <span class="kw">float</span> y1_, y2_;  <span class="cmt">// Output delay</span>
+};</code></pre>
+<div class="seg"><div class="ex"><h4>IIRFilter::reset() / process()</h4><p>通用二阶节，结构与 BiquadFilter 类似但系数为运行时传入。</p><p>用于非 48 kHz 的回落路径。</p></div><div class="cd"><div class="csrc"><code>src/iir_filter.cpp:37–64</code><span class="cl">28 行</span></div><pre><code><span class="kw">void</span> IIRFilter::reset() {
+    state_b_.assign(b_.size(), 0.0f);
+    state_a_.assign(a_.size(), 0.0f);
+}
+
+<span class="kw">float</span> IIRFilter::process(<span class="kw">float</span> input) {
+    <span class="cmt">// Shift delay lines</span>
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = state_b_.size() - 1; i &gt; 0; --i) {
+        state_b_[i] = state_b_[i-1];
+    }
+    state_b_[0] = input;
+
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = state_a_.size() - 1; i &gt; 0; --i) {
+        state_a_[i] = state_a_[i-1];
+    }
+
+    <span class="cmt">// Calculate output: y[n] = sum(b[k]*x[n-k]) - sum(a[k]*y[n-k]) for k&gt;=1</span>
+    <span class="kw">float</span> output = 0.0f;
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; b_.size(); ++i) {
+        output += b_[i] * state_b_[i];
+    }
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 1; i &lt; a_.size(); ++i) {
+        output -= a_[i] * state_a_[i];
+    }
+
+    state_a_[0] = output;
+    <span class="kw">return</span> output;
+}</code></pre></div></div>
+<div class="seg"><div class="ex"><h4>IIRFilter::process(vector) / process_sample()</h4><p>批量处理与就地处理两种形态。</p><p><code>process_sample(float* data, size_t count)</code> 直接改写调用者的缓冲，零额外分配。</p></div><div class="cd"><div class="csrc"><code>src/iir_filter.cpp:66–103</code><span class="cl">38 行</span></div><pre><code><span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; IIRFilter::process(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal) {
+    <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; result;
+    result.reserve(signal.size());
+
+    <span class="kw">for</span> (<span class="kw">float</span> x : signal) {
+        result.push_back(process(x));
+    }
+
+    <span class="kw">return</span> result;
+}
+
+<span class="kw">void</span> IIRFilter::process_sample(<span class="kw">float</span>* data, <span class="kw">size_t</span> count) {
+    <span class="kw">for</span> (<span class="kw">size_t</span> n = 0; n &lt; count; ++n) {
+        <span class="kw">float</span> input = data[n];
+
+        <span class="cmt">// Shift delay lines</span>
+        <span class="kw">for</span> (<span class="kw">size_t</span> i = state_b_.size() - 1; i &gt; 0; --i) {
+            state_b_[i] = state_b_[i-1];
+        }
+        state_b_[0] = input;
+
+        <span class="kw">for</span> (<span class="kw">size_t</span> i = state_a_.size() - 1; i &gt; 0; --i) {
+            state_a_[i] = state_a_[i-1];
+        }
+
+        <span class="cmt">// Calculate output</span>
+        <span class="kw">float</span> output = 0.0f;
+        <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; b_.size(); ++i) {
+            output += b_[i] * state_b_[i];
+        }
+        <span class="kw">for</span> (<span class="kw">size_t</span> i = 1; i &lt; a_.size(); ++i) {
+            output -= a_[i] * state_a_[i];
+        }
+
+        state_a_[0] = output;
+        data[n] = output;
+    }
+}</code></pre></div></div>
+<h4 class="blk">系数结构</h4>
+<div class="csrc">BiquadCoefficients<code>include/iir_filter.hpp:28–31</code><span class="cl">4 行</span></div><pre><code><span class="kw">struct</span> BiquadCoefficients {
+    <span class="kw">float</span> b0, b1, b2;  <span class="cmt">// Numerator</span>
+    <span class="kw">float</span> a0, a1, a2;  <span class="cmt">// Denominator (a0 usually = 1)</span>
+};</code></pre>
+<div class="danger"><b>时间常数：为什么 20 Hz 特别敏感</b>A 计权在 20 Hz 衰减约 <strong>−50.4 dB</strong>，极点非常靠近单位圆，τ ≈ 7.7 ms。50 ms 窗口只有 6.5τ —— 一旦清零，整块都在瞬态里。<br>C 计权在 20 Hz 只衰减 <strong>−6.2 dB</strong>，极点远离单位圆，因此<strong>同样的清零缺陷在 C 上几乎看不出来</strong>。</div>
+<div class="pager"><button data-goto="p8">← 上一页</button><button data-goto="p10">下一页 →</button></div></div><div class="page" id="p10"><h2>系数表与设计算法 —— 逐段讲解</h2>
+<p class="sub">设备固定 48 kHz，运行时只查表；运行时设计仅作非 48k 回落。</p>
+<h3>WEIGHTING_TABLE —— 单一数据源</h3>
+<div class="csrc">WeightingCoeffs / WeightingTableEntry / WEIGHTING_TABLE<code>include/weighting_coefficients_multirate.hpp:44–44</code><span class="cl">1 行</span></div><pre><code><span class="kw">struct</span> WeightingCoeffs { <span class="kw">float</span> b0, b1, b2, a1, a2; };</code></pre>
+<h3>A 计权设计（matched-z + RBJ 峰化修正）</h3>
+<div class="seg"><div class="ex"><h4>前段：模拟原型与极点映射</h4><p>先在 s 平面构造 IEC 61672-1 的 A 计权模拟传递函数，再用 <b>matched-z</b> 把极点映射到 z 平面：<code>z_p = exp(s_p·T)</code>。</p><p class="key">matched-z 能精确保留低频极点的位置 —— 这正是 20–100 Hz 精度的关键。</p></div><div class="cd"><div class="csrc"><code>src/iir_filter.cpp:220–262</code><span class="cl">43 行</span></div><pre><code><span class="kw">std</span>::vector&lt;BiquadCoefficients&gt; a_weighting_design(<span class="kw">float</span> sample_rate, <span class="kw">float</span>* gain_out) {
+    <span class="kw">std</span>::vector&lt;BiquadCoefficients&gt; sos;
+
+    <span class="kw">float</span> T = 1.0f / sample_rate;
+    <span class="kw">float</span> fs = 2.0f / T;  <span class="cmt">// 2*fs in bilinear transform</span>
+
+    <span class="cmt">// Analog poles and zeros for A-weighting</span>
+    <span class="cmt">// Zeros: 4 zeros at origin (s = 0)</span>
+    <span class="cmt">// Poles: -129.4 (double), -676.7, -4636, -76617 (double)</span>
+
+    <span class="cmt">// Bilinear transform coefficients</span>
+    <span class="cmt">// Each biquad section represents a pair of poles/zeros</span>
+
+    <span class="cmt">// Section 1: High-frequency poles at -76617 rad/s (double pole)</span>
+    {
+        <span class="kw">float</span> wc = 76617.0f;
+        <span class="kw">float</span> K = <span class="kw">std</span>::tan(wc * T / 2.0f);
+        <span class="kw">float</span> a0 = 1.0f + 2.0f*K + K*K;
+        <span class="kw">float</span> a1 = 2.0f * (K*K - 1.0f);
+        <span class="kw">float</span> a2 = 1.0f - 2.0f*K + K*K;
+
+        <span class="cmt">// Numerator for differentiator-like behavior at high freq</span>
+        <span class="kw">float</span> b0 = 1.0f;
+        <span class="kw">float</span> b1 = -2.0f;
+        <span class="kw">float</span> b2 = 1.0f;
+
+        sos.push_back({b0, b1, b2, a0, a1, a2});
+    }
+
+    <span class="cmt">// Section 2: Mid-frequency poles at -4636 and -676.7 rad/s</span>
+    {
+        <span class="kw">float</span> wc1 = 4636.0f;
+        <span class="kw">float</span> wc2 = 676.7f;
+        <span class="kw">float</span> K1 = <span class="kw">std</span>::tan(wc1 * T / 2.0f);
+        <span class="kw">float</span> K2 = <span class="kw">std</span>::tan(wc2 * T / 2.0f);
+
+        <span class="kw">float</span> a0 = 1.0f + K1 + K2 + K1*K2;
+        <span class="kw">float</span> a1 = 2.0f * (K1*K2 - 1.0f);
+        <span class="kw">float</span> a2 = 1.0f - K1 - K2 + K1*K2;
+
+        <span class="kw">float</span> b0 = 1.0f;
+        <span class="kw">float</span> b1 = 0.0f;
+        <span class="kw">float</span> b2 = -1.0f;</code></pre></div></div>
+<div class="seg"><div class="ex"><h4>后段：RBJ 峰化修正与归一化</h4><p>matched-z 对 A 曲线的低频段拟合不足，再叠一级 <b>2 阶 RBJ 峰化</b>修正。</p><p>最后返回 SOS 数组并把 1 kHz 增益通过 <code>gain</code> 出参带出 —— <b>增益不在系数里</b>，运行时单独乘。</p></div><div class="cd"><div class="csrc"><code>src/iir_filter.cpp:263–310</code><span class="cl">48 行</span></div><pre><code>
+        sos.push_back({b0, b1, b2, a0, a1, a2});
+    }
+
+    <span class="cmt">// Section 3: Low-frequency poles at -129.4 rad/s (double pole)</span>
+    {
+        <span class="kw">float</span> wc = 129.4f;
+        <span class="kw">float</span> K = <span class="kw">std</span>::tan(wc * T / 2.0f);
+        <span class="kw">float</span> a0 = 1.0f + 2.0f*K + K*K;
+        <span class="kw">float</span> a1 = 2.0f * (K*K - 1.0f);
+        <span class="kw">float</span> a2 = 1.0f - 2.0f*K + K*K;
+
+        <span class="kw">float</span> b0 = 1.0f;
+        <span class="kw">float</span> b1 = -2.0f;
+        <span class="kw">float</span> b2 = 1.0f;
+
+        sos.push_back({b0, b1, b2, a0, a1, a2});
+    }
+
+    <span class="cmt">// Apply gain normalization for 0 dB at 1 kHz</span>
+    <span class="kw">float</span> target_gain_db = 0.0f;
+    <span class="kw">float</span> f_ref = 1000.0f;
+
+    <span class="cmt">// Calculate gain at 1 kHz and normalize</span>
+    <span class="kw">float</span> omega = noise_const::TWO_PI_F * f_ref / sample_rate;
+    <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt; z(<span class="kw">std</span>::cos(omega), <span class="kw">std</span>::sin(omega));
+
+    <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt; H(1.0f, 0.0f);
+    <span class="kw">for</span> (<span class="kw">const</span> <span class="kw">auto</span>&amp; coef : sos) {
+        <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt; num = <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(coef.b0, 0.0f)
+                                + <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(coef.b1, 0.0f) / z
+                                + <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(coef.b2, 0.0f) / (z * z);
+        <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt; den = <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(coef.a0, 0.0f)
+                                + <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(coef.a1, 0.0f) / z
+                                + <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(coef.a2, 0.0f) / (z * z);
+        H *= num / den;
+    }
+
+    <span class="kw">float</span> current_gain = <span class="kw">std</span>::abs(H);
+    <span class="kw">float</span> norm_factor = <span class="kw">std</span>::pow(10.0f, target_gain_db / 20.0f) / current_gain;
+
+    <span class="cmt">// Apply normalization to first section</span>
+    sos[0].b0 *= norm_factor;
+    sos[0].b1 *= norm_factor;
+    sos[0].b2 *= norm_factor;
+
+    <span class="kw">return</span> sos;
+}</code></pre></div></div>
+<h3>C 计权设计（复极点最小二乘）</h3>
+<div class="seg"><div class="ex"><h4>前段：零点锁定与极点求解</h4><p>零点锁定在 <code>z = 1</code>（直流处），极点自由，用最小二乘拟合 C 曲线。</p><p>C 曲线在低频平缓，因此只需 3 段。</p></div><div class="cd"><div class="csrc"><code>src/iir_filter.cpp:314–345</code><span class="cl">32 行</span></div><pre><code><span class="kw">std</span>::vector&lt;BiquadCoefficients&gt; c_weighting_design(<span class="kw">float</span> sample_rate, <span class="kw">float</span>* gain_out) {
+    <span class="kw">std</span>::vector&lt;BiquadCoefficients&gt; sos;
+
+    <span class="kw">float</span> T = 1.0f / sample_rate;
+
+    <span class="cmt">// C-weighting is nearly flat, only has high-frequency roll-off</span>
+    <span class="cmt">// Poles at -129.4 (double) and high frequency cutoff</span>
+
+    <span class="cmt">// Section 1: High-frequency shelf</span>
+    {
+        <span class="kw">float</span> fc = 20000.0f;  <span class="cmt">// Near Nyquist</span>
+        <span class="kw">float</span> wc = noise_const::TWO_PI_F * fc;
+        <span class="kw">float</span> K = <span class="kw">std</span>::tan(wc * T / 2.0f);
+
+        <span class="kw">float</span> a0 = 1.0f + K;
+        <span class="kw">float</span> a1 = K - 1.0f;
+        <span class="kw">float</span> a2 = 0.0f;
+
+        <span class="kw">float</span> b0 = K;
+        <span class="kw">float</span> b1 = K;
+        <span class="kw">float</span> b2 = 0.0f;
+
+        sos.push_back({b0, b1, b2, a0, a1, a2});
+    }
+
+    <span class="cmt">// Section 2: Low-frequency poles (similar to A-weighting but less aggressive)</span>
+    {
+        <span class="kw">float</span> wc = 129.4f;
+        <span class="kw">float</span> K = <span class="kw">std</span>::tan(wc * T / 2.0f);
+        <span class="kw">float</span> a0 = 1.0f + 2.0f*K + K*K;
+        <span class="kw">float</span> a1 = 2.0f * (K*K - 1.0f);
+        <span class="kw">float</span> a2 = 1.0f - 2.0f*K + K*K;</code></pre></div></div>
+<div class="seg"><div class="ex"><h4>后段：输出 SOS</h4><p>转成 biquad 系数并对 1 kHz 归一化，增益同样单独返回。</p></div><div class="cd"><div class="csrc"><code>src/iir_filter.cpp:346–377</code><span class="cl">32 行</span></div><pre><code>
+        <span class="kw">float</span> b0 = 1.0f;
+        <span class="kw">float</span> b1 = 0.0f;
+        <span class="kw">float</span> b2 = -1.0f;
+
+        sos.push_back({b0, b1, b2, a0, a1, a2});
+    }
+
+    <span class="cmt">// Normalize gain at 1 kHz</span>
+    <span class="kw">float</span> omega = noise_const::TWO_PI_F * 1000.0f / sample_rate;
+    <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt; z(<span class="kw">std</span>::cos(omega), <span class="kw">std</span>::sin(omega));
+
+    <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt; H(1.0f, 0.0f);
+    <span class="kw">for</span> (<span class="kw">const</span> <span class="kw">auto</span>&amp; coef : sos) {
+        <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt; num = <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(coef.b0, 0.0f)
+                                + <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(coef.b1, 0.0f) / z
+                                + <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(coef.b2, 0.0f) / (z * z);
+        <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt; den = <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(coef.a0, 0.0f)
+                                + <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(coef.a1, 0.0f) / z
+                                + <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(coef.a2, 0.0f) / (z * z);
+        H *= num / den;
+    }
+
+    <span class="kw">float</span> current_gain = <span class="kw">std</span>::abs(H);
+    <span class="kw">float</span> norm_factor = 1.0f / current_gain;  <span class="cmt">// Unity gain at 1 kHz</span>
+
+    sos[0].b0 *= norm_factor;
+    sos[0].b1 *= norm_factor;
+    sos[0].b2 *= norm_factor;
+
+    <span class="kw">return</span> sos;
+}</code></pre></div></div>
+<h3>双线性变换与 SOS 转换</h3>
+<div class="seg"><div class="ex"><h4>bilinear_transform()</h4><p>经典双线性变换：<code>s → 2/T·(z−1)/(z+1)</code>。</p><p>注意预畸变（pre-warping）处理，否则高频会偏移。</p></div><div class="cd"><div class="csrc"><code>src/iir_filter.cpp:172–214</code><span class="cl">43 行</span></div><pre><code>IIRCoefficients bilinear_transform(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">std</span>::complex&lt;<span class="kw">double</span>&gt;&gt;&amp; analog_zeros,
+                                   <span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">std</span>::complex&lt;<span class="kw">double</span>&gt;&gt;&amp; analog_poles,
+                                   <span class="kw">double</span> gain,
+                                   <span class="kw">double</span> sample_rate) {
+
+    <span class="kw">double</span> T = 1.0 / sample_rate;
+    <span class="kw">double</span> fs = 2.0 / T;
+
+    <span class="cmt">// Transform zeros</span>
+    <span class="kw">std</span>::vector&lt;<span class="kw">std</span>::complex&lt;<span class="kw">double</span>&gt;&gt; digital_zeros;
+    <span class="kw">for</span> (<span class="kw">const</span> <span class="kw">auto</span>&amp; z : analog_zeros) {
+        <span class="kw">std</span>::complex&lt;<span class="kw">double</span>&gt; num = fs + z;
+        <span class="kw">std</span>::complex&lt;<span class="kw">double</span>&gt; den = fs - z;
+        digital_zeros.push_back(num / den);
+    }
+
+    <span class="cmt">// Transform poles</span>
+    <span class="kw">std</span>::vector&lt;<span class="kw">std</span>::complex&lt;<span class="kw">double</span>&gt;&gt; digital_poles;
+    <span class="kw">for</span> (<span class="kw">const</span> <span class="kw">auto</span>&amp; p : analog_poles) {
+        <span class="kw">std</span>::complex&lt;<span class="kw">double</span>&gt; num = fs + p;
+        <span class="kw">std</span>::complex&lt;<span class="kw">double</span>&gt; den = fs - p;
+        digital_poles.push_back(num / den);
+    }
+
+    <span class="cmt">// Convert poles/zeros to polynomial coefficients</span>
+    <span class="cmt">// This is a simplified version - full implementation needs polynomial expansion</span>
+
+    <span class="cmt">// For now, create a simple implementation</span>
+    <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; b = {static_cast&lt;<span class="kw">float</span>&gt;(gain)};
+    <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; a(analog_poles.size() + 1, 0.0f);
+    a[0] = 1.0f;
+
+    <span class="cmt">// Simple second-order approximation for demonstration</span>
+    <span class="cmt">// Full implementation would use proper polynomial expansion</span>
+    <span class="kw">if</span> (analog_poles.size() &gt;= 2) {
+        b = {static_cast&lt;<span class="kw">float</span>&gt;(gain), static_cast&lt;<span class="kw">float</span>&gt;(2*gain), static_cast&lt;<span class="kw">float</span>&gt;(gain)};  <span class="cmt">// Simplified numerator</span>
+        a = {1.0f,
+             static_cast&lt;<span class="kw">float</span>&gt;(-2.0 * digital_poles[0].real()),
+             static_cast&lt;<span class="kw">float</span>&gt;(<span class="kw">std</span>::norm(digital_poles[0]))};
+    }
+
+    <span class="kw">return</span> {b, a};
+}</code></pre></div></div>
+<div class="seg"><div class="ex"><h4>tf2sos()</h4><p>把高阶传递函数拆成二阶节级联。<b>拆节顺序影响数值稳定性</b> —— 一般按极点靠近单位圆的程度排列。</p></div><div class="cd"><div class="csrc"><code>src/iir_filter.cpp:386–405</code><span class="cl">20 行</span></div><pre><code><span class="kw">std</span>::vector&lt;BiquadCoefficients&gt; tf2sos(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; b,
+                                       <span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; a) {
+    <span class="cmt">// Simplified implementation</span>
+    <span class="cmt">// Full implementation would use proper polynomial factorization</span>
+    <span class="kw">std</span>::vector&lt;BiquadCoefficients&gt; sos;
+
+    <span class="cmt">// For now, just return a single biquad if possible</span>
+    <span class="kw">if</span> (b.size() &lt;= 3 &amp;&amp; a.size() &lt;= 3) {
+        BiquadCoefficients coef;
+        coef.b0 = b[0];
+        coef.b1 = (b.size() &gt; 1) ? b[1] : 0.0f;
+        coef.b2 = (b.size() &gt; 2) ? b[2] : 0.0f;
+        coef.a0 = a[0];
+        coef.a1 = (a.size() &gt; 1) ? a[1] : 0.0f;
+        coef.a2 = (a.size() &gt; 2) ? a[2] : 0.0f;
+        sos.push_back(coef);
+    }
+
+    <span class="kw">return</span> sos;
+}</code></pre></div></div>
+<div class="warn"><b>单一数据源原则（v3.3.4 教训）</b>原先 <code>filter_coefficients_48k.hpp</code> 里还有一份 A/C 副本，两份会漂移：C 副本在 8 kHz 同样给出 −1.09 dB（硬件实测偏高 +2.0 dB 的来源之一）；A 副本未归一化，导致 <code>signal_utils</code> 路径漏乘增益 +2.43 dB。<strong>现已删除全部副本，所有调用点统一走 WEIGHTING_TABLE。</strong></div>
+<table><thead><tr><th>项目</th><th>值</th></tr></thead><tbody><tr><td>保留采样率</td><td><b>仅 48 kHz</b></td></tr><tr><td>A 段数 / C 段数</td><td><b>4</b> / <b>3</b></td></tr><tr><td>精度（34 频点）</td><td>A <b>0.483 dB</b> · C <b>0.158 dB</b> → Class 1</td></tr><tr><td>验证工具</td><td><code>tests/test_class1_precision.cpp</code></td></tr></tbody></table>
+<div class="pager"><button data-goto="p9">← 上一页</button><button data-goto="p11">下一页 →</button></div></div><div class="page" id="p11">
+<h2>数据结构 —— 完整定义</h2>
+<p class="sub">对外结果的载体。直接给出结构体原文。</p>
+<h3>SecondMetrics —— 45 个 float / 81 项指标</h3>
+<div class="csrc">SecondMetrics 完整定义<code>include/noise_metrics.hpp:99–194</code><span class="cl">96 行</span></div><pre><code><span class="kw">struct</span> SecondMetrics {
+    <span class="cmt">//=== Metadata (2) ===</span>
+    <span class="kw">float</span> timestamp{0.0f};      <span class="cmt">// Unix timestamp (seconds since epoch)</span>
+    <span class="kw">float</span> duration_s{1.0f};     <span class="cmt">// Actual duration (typically 1.0s)</span>
+
+    <span class="cmt">//=== Sound Levels (13) — v3.3.3 LCF/LCS/LCSmax added ===</span>
+    <span class="kw">float</span> LAeq{0.0f};           <span class="cmt">// A-weighted equivalent SPL (时间平均)</span>
+    <span class="kw">float</span> LCeq{0.0f};           <span class="cmt">// C-weighted equivalent SPL (时间平均)</span>
+    <span class="kw">float</span> LZeq{0.0f};           <span class="cmt">// Z-weighted (unweighted) equivalent SPL (时间平均)</span>
+    <span class="kw">float</span> LAFmax{0.0f};         <span class="cmt">// [deprecate: 由 LAF 替代, 保留兼容旧消费者]</span>
+    <span class="kw">float</span> LASmax{0.0f};         <span class="cmt">// A 加权 + Slow 时间计权最大值 [v3.3.2 added]</span>
+    <span class="kw">float</span> LCSmax{0.0f};         <span class="cmt">// C 加权 + Slow 时间计权最大值 [v3.3.3 added]</span>
+    <span class="kw">float</span> LAF{0.0f};            <span class="cmt">// A-weighted Fast time-weighted SPL (τ=125ms) [v3.3.2 added]</span>
+    <span class="kw">float</span> LAS{0.0f};            <span class="cmt">// A-weighted Slow time-weighted SPL (τ=1s) [v3.3.2 added]</span>
+    <span class="kw">float</span> LCF{0.0f};            <span class="cmt">// C-weighted Fast time-weighted SPL (τ=125ms) [v3.3.3 added]</span>
+    <span class="kw">float</span> LCS{0.0f};            <span class="cmt">// C-weighted Slow time-weighted SPL (τ=1s) [v3.3.3 added]</span>
+    <span class="kw">float</span> LZPeak{0.0f};         <span class="cmt">// Z-weighted peak level (OVERLOAD 判定主依据)</span>
+    <span class="kw">float</span> LCPeak{0.0f};         <span class="cmt">// C-weighted peak level</span>
+    <span class="kw">float</span> LAPeak{0.0f};         <span class="cmt">// A-weighted peak level [v3.3.0 added] — 听力损伤评估关键指标</span>
+
+    <span class="cmt">//=== Dose Increments (4) ===</span>
+    <span class="kw">float</span> dose_frac_niosh{0.0f};     <span class="cmt">// NIOSH dose fraction (0-1)</span>
+    <span class="kw">float</span> dose_frac_osha_pel{0.0f};  <span class="cmt">// OSHA PEL dose fraction</span>
+    <span class="kw">float</span> dose_frac_osha_hca{0.0f};  <span class="cmt">// OSHA HCA dose fraction</span>
+    <span class="kw">float</span> dose_frac_eu_iso{0.0f};    <span class="cmt">// EU/ISO dose fraction</span>
+
+    <span class="cmt">//=== Quality Control (3) ===</span>
+    <span class="kw">bool</span> overload_flag{<span class="kw">false</span>};    <span class="cmt">// LZPeak &gt; 140 dB (OVERLOAD_THRESHOLD); per IEC 61672-1 Class 1 过载判定</span>
+    <span class="kw">bool</span> underrange_flag{<span class="kw">false</span>};  <span class="cmt">// LAeq &lt; 30 dB (UNDERRANGE_THRESHOLD); 传感器信号太低</span>
+    <span class="kw">bool</span> wearing_state{<span class="kw">true</span>};     <span class="cmt">// LAeq &gt; 40 dB 表示佩戴中 (粗略检测)</span>
+
+    <span class="cmt">//=== 事件检测结果 (2) — v3.3.3 新增 ===</span>
+    <span class="cmt">// 由 EventDetector::check_metrics() 填入（调用方负责回写）</span>
+    <span class="cmt">//   event_type:     0=NONE, 1=MINOR, 2=MODERATE, 3=SEVERE（对应 EventType 枚举）</span>
+    <span class="cmt">//   event_severity: 0-100 严重程度评分</span>
+    <span class="kw">uint8_t</span> event_type{0};
+    <span class="kw">uint8_t</span> event_severity{0};
+
+    <span class="cmt">//=== Kurtosis Metrics (4) ===</span>
+    <span class="kw">float</span> kurtosis_total{3.0f};      <span class="cmt">// Z-weighted (raw signal) kurtosis (Pearson, normal=3)</span>
+    <span class="kw">float</span> kurtosis_a_weighted{3.0f};  <span class="cmt">// A-weighted kurtosis</span>
+    <span class="kw">float</span> kurtosis_c_weighted{3.0f};  <span class="cmt">// C-weighted kurtosis</span>
+    <span class="kw">float</span> beta_kurtosis{0.0f};        <span class="cmt">// Kurtosis from raw moments (per spec 4.X.3)</span>
+
+    <span class="cmt">//=== Raw Moment Statistics for Aggregation (5, per spec 4.X.3) ===</span>
+    <span class="kw">int32_t</span> n_samples{0};  <span class="cmt">// Sample count n</span>
+    <span class="kw">float</span> sum_x{0.0f};     <span class="cmt">// S1 = Σx_k</span>
+    <span class="kw">float</span> sum_x2{0.0f};    <span class="cmt">// S2 = Σx_k²</span>
+    <span class="kw">float</span> sum_x3{0.0f};    <span class="cmt">// S3 = Σx_k³</span>
+    <span class="kw">float</span> sum_x4{0.0f};    <span class="cmt">// S4 = Σx_k⁴</span>
+
+    <span class="cmt">//=== 1/3 Octave Band SPL (9) ===</span>
+    <span class="kw">float</span> freq_63hz_spl{0.0f};
+    <span class="kw">float</span> freq_125hz_spl{0.0f};
+    <span class="kw">float</span> freq_250hz_spl{0.0f};
+    <span class="kw">float</span> freq_500hz_spl{0.0f};
+    <span class="kw">float</span> freq_1khz_spl{0.0f};
+    <span class="kw">float</span> freq_2khz_spl{0.0f};
+    <span class="kw">float</span> freq_4khz_spl{0.0f};
+    <span class="kw">float</span> freq_8khz_spl{0.0f};
+    <span class="kw">float</span> freq_16khz_spl{0.0f};
+
+    <span class="cmt">//=== 1/3 Octave Band Raw Moment Statistics S1-S4 (9 bands × 5 values = 45) ===</span>
+    <span class="cmt">// 63Hz band</span>
+    <span class="kw">int32_t</span> freq_63hz_n{0};
+    <span class="kw">float</span> freq_63hz_s1{0.0f}, freq_63hz_s2{0.0f}, freq_63hz_s3{0.0f}, freq_63hz_s4{0.0f};
+    <span class="cmt">// 125Hz band</span>
+    <span class="kw">int32_t</span> freq_125hz_n{0};
+    <span class="kw">float</span> freq_125hz_s1{0.0f}, freq_125hz_s2{0.0f}, freq_125hz_s3{0.0f}, freq_125hz_s4{0.0f};
+    <span class="cmt">// 250Hz band</span>
+    <span class="kw">int32_t</span> freq_250hz_n{0};
+    <span class="kw">float</span> freq_250hz_s1{0.0f}, freq_250hz_s2{0.0f}, freq_250hz_s3{0.0f}, freq_250hz_s4{0.0f};
+    <span class="cmt">// 500Hz band</span>
+    <span class="kw">int32_t</span> freq_500hz_n{0};
+    <span class="kw">float</span> freq_500hz_s1{0.0f}, freq_500hz_s2{0.0f}, freq_500hz_s3{0.0f}, freq_500hz_s4{0.0f};
+    <span class="cmt">// 1kHz band</span>
+    <span class="kw">int32_t</span> freq_1khz_n{0};
+    <span class="kw">float</span> freq_1khz_s1{0.0f}, freq_1khz_s2{0.0f}, freq_1khz_s3{0.0f}, freq_1khz_s4{0.0f};
+    <span class="cmt">// 2kHz band</span>
+    <span class="kw">int32_t</span> freq_2khz_n{0};
+    <span class="kw">float</span> freq_2khz_s1{0.0f}, freq_2khz_s2{0.0f}, freq_2khz_s3{0.0f}, freq_2khz_s4{0.0f};
+    <span class="cmt">// 4kHz band</span>
+    <span class="kw">int32_t</span> freq_4khz_n{0};
+    <span class="kw">float</span> freq_4khz_s1{0.0f}, freq_4khz_s2{0.0f}, freq_4khz_s3{0.0f}, freq_4khz_s4{0.0f};
+    <span class="cmt">// 8kHz band</span>
+    <span class="kw">int32_t</span> freq_8khz_n{0};
+    <span class="kw">float</span> freq_8khz_s1{0.0f}, freq_8khz_s2{0.0f}, freq_8khz_s3{0.0f}, freq_8khz_s4{0.0f};
+    <span class="cmt">// 16kHz band</span>
+    <span class="kw">int32_t</span> freq_16khz_n{0};
+    <span class="kw">float</span> freq_16khz_s1{0.0f}, freq_16khz_s2{0.0f}, freq_16khz_s3{0.0f}, freq_16khz_s4{0.0f};
+
+    SecondMetrics() = default;
+
+    /** @brief Reset all fields to default values */
+    <span class="kw">void</span> reset() { *this = SecondMetrics{}; }
+};</code></pre>
+<h3>MinuteMetrics —— 40 个 float</h3>
+<div class="csrc">MinuteMetrics 完整定义<code>include/noise_metrics.hpp:204–282</code><span class="cl">79 行</span></div><pre><code><span class="kw">struct</span> MinuteMetrics {
+    <span class="kw">float</span> timestamp{0.0f};
+    <span class="kw">float</span> duration_s{60.0f};
+
+    <span class="cmt">//=== Overall Sound Levels (3) ===</span>
+    <span class="kw">float</span> LAeq{0.0f};
+    <span class="kw">float</span> LCeq{0.0f};
+    <span class="kw">float</span> LZeq{0.0f};
+
+    <span class="cmt">//=== Peak Levels (6) — v3.3.3 LCSmax added ===</span>
+    <span class="kw">float</span> LAFmax{0.0f};         <span class="cmt">// [deprecate: 由 LAF 替代, 保留兼容旧消费者]</span>
+    <span class="kw">float</span> LASmax{0.0f};         <span class="cmt">// [v3.3.2 added] A 加权 + Slow 时间计权最大值</span>
+    <span class="kw">float</span> LCSmax{0.0f};         <span class="cmt">// [v3.3.3 added] C 加权 + Slow 时间计权最大值</span>
+    <span class="kw">float</span> LZPeak{0.0f};        <span class="cmt">// Z-weighted peak (max across seconds in minute)</span>
+    <span class="kw">float</span> LCPeak{0.0f};        <span class="cmt">// C-weighted peak (max across seconds in minute)</span>
+    <span class="kw">float</span> LAPeak{0.0f};        <span class="cmt">// A-weighted peak (max across seconds in minute) [v3.3.0 added] — 听力损伤评估关键指标</span>
+
+    <span class="cmt">//=== Dose Accumulation (4) ===</span>
+    <span class="kw">float</span> dose_frac_niosh{0.0f};
+    <span class="kw">float</span> dose_frac_osha_pel{0.0f};
+    <span class="kw">float</span> dose_frac_osha_hca{0.0f};
+    <span class="kw">float</span> dose_frac_eu_iso{0.0f};
+
+    <span class="cmt">//=== QC Statistics (3) ===</span>
+    <span class="kw">int32_t</span> overload_count{0};
+    <span class="kw">int32_t</span> underrange_count{0};
+    <span class="kw">int32_t</span> valid_seconds{0};
+
+    <span class="cmt">//=== 事件统计 (3) — v3.3.3 新增 ===</span>
+    <span class="kw">int32_t</span> event_minor_count{0};     <span class="cmt">///&lt; MINOR 事件秒钟数</span>
+    <span class="kw">int32_t</span> event_moderate_count{0};  <span class="cmt">///&lt; MODERATE 事件秒钟数</span>
+    <span class="kw">int32_t</span> event_severe_count{0};    <span class="cmt">///&lt; SEVERE 事件秒钟数</span>
+
+    <span class="cmt">//=== Kurtosis (3) ===</span>
+    <span class="kw">float</span> kurtosis_total{3.0f};
+    <span class="kw">float</span> kurtosis_a_weighted{3.0f};
+    <span class="kw">float</span> kurtosis_c_weighted{3.0f};
+
+    <span class="cmt">//=== Raw Moments for Kurtosis (5) ===</span>
+    <span class="kw">int32_t</span> n_samples{0};
+    <span class="kw">float</span> sum_x{0.0f};
+    <span class="kw">float</span> sum_x2{0.0f};
+    <span class="kw">float</span> sum_x3{0.0f};
+    <span class="kw">float</span> sum_x4{0.0f};
+
+    <span class="cmt">//=== 1/3 Octave Band SPL (9) ===</span>
+    <span class="kw">float</span> freq_63hz_spl{0.0f};
+    <span class="kw">float</span> freq_125hz_spl{0.0f};
+    <span class="kw">float</span> freq_250hz_spl{0.0f};
+    <span class="kw">float</span> freq_500hz_spl{0.0f};
+    <span class="kw">float</span> freq_1khz_spl{0.0f};
+    <span class="kw">float</span> freq_2khz_spl{0.0f};
+    <span class="kw">float</span> freq_4khz_spl{0.0f};
+    <span class="kw">float</span> freq_8khz_spl{0.0f};
+    <span class="kw">float</span> freq_16khz_spl{0.0f};
+
+    <span class="cmt">//=== 1/3 Octave Band Raw Moments S1-S4 (45) ===</span>
+    <span class="kw">int32_t</span> freq_63hz_n{0};
+    <span class="kw">float</span> freq_63hz_s1{0.0f}, freq_63hz_s2{0.0f}, freq_63hz_s3{0.0f}, freq_63hz_s4{0.0f};
+    <span class="kw">int32_t</span> freq_125hz_n{0};
+    <span class="kw">float</span> freq_125hz_s1{0.0f}, freq_125hz_s2{0.0f}, freq_125hz_s3{0.0f}, freq_125hz_s4{0.0f};
+    <span class="kw">int32_t</span> freq_250hz_n{0};
+    <span class="kw">float</span> freq_250hz_s1{0.0f}, freq_250hz_s2{0.0f}, freq_250hz_s3{0.0f}, freq_250hz_s4{0.0f};
+    <span class="kw">int32_t</span> freq_500hz_n{0};
+    <span class="kw">float</span> freq_500hz_s1{0.0f}, freq_500hz_s2{0.0f}, freq_500hz_s3{0.0f}, freq_500hz_s4{0.0f};
+    <span class="kw">int32_t</span> freq_1khz_n{0};
+    <span class="kw">float</span> freq_1khz_s1{0.0f}, freq_1khz_s2{0.0f}, freq_1khz_s3{0.0f}, freq_1khz_s4{0.0f};
+    <span class="kw">int32_t</span> freq_2khz_n{0};
+    <span class="kw">float</span> freq_2khz_s1{0.0f}, freq_2khz_s2{0.0f}, freq_2khz_s3{0.0f}, freq_2khz_s4{0.0f};
+    <span class="kw">int32_t</span> freq_4khz_n{0};
+    <span class="kw">float</span> freq_4khz_s1{0.0f}, freq_4khz_s2{0.0f}, freq_4khz_s3{0.0f}, freq_4khz_s4{0.0f};
+    <span class="kw">int32_t</span> freq_8khz_n{0};
+    <span class="kw">float</span> freq_8khz_s1{0.0f}, freq_8khz_s2{0.0f}, freq_8khz_s3{0.0f}, freq_8khz_s4{0.0f};
+    <span class="kw">int32_t</span> freq_16khz_n{0};
+    <span class="kw">float</span> freq_16khz_s1{0.0f}, freq_16khz_s2{0.0f}, freq_16khz_s3{0.0f}, freq_16khz_s4{0.0f};
+
+    MinuteMetrics() = default;
+    <span class="kw">void</span> reset() { *this = MinuteMetrics{}; }
+};</code></pre>
+<h3>FreqBandMoments</h3>
+<div class="csrc">FreqBandMoments<code>include/noise_metrics.hpp:49–59</code><span class="cl">11 行</span></div><pre><code><span class="kw">struct</span> FreqBandMoments {
+    <span class="kw">int32_t</span> n{0};        <span class="cmt">// Sample count</span>
+    <span class="kw">float</span> s1{0.0f};      <span class="cmt">// Σx_k</span>
+    <span class="kw">float</span> s2{0.0f};      <span class="cmt">// Σx_k²</span>
+    <span class="kw">float</span> s3{0.0f};      <span class="cmt">// Σx_k³</span>
+    <span class="kw">float</span> s4{0.0f};      <span class="cmt">// Σx_k⁴</span>
+
+    FreqBandMoments() = default;
+    FreqBandMoments(<span class="kw">int32_t</span> n_, <span class="kw">float</span> s1_, <span class="kw">float</span> s2_, <span class="kw">float</span> s3_, <span class="kw">float</span> s4_)
+        : n(n_), s1(s1_), s2(s2_), s3(s3_), s4(s4_) {}
+};</code></pre>
+<h3>事件相关类型</h3>
+<div class="csrc">EventType<code>include/event_detector.hpp:50–55</code><span class="cl">6 行</span></div><pre><code><span class="kw">enum</span> <span class="kw">class</span> EventType : <span class="kw">uint8_t</span> {
+    NONE     = 0,  <span class="cmt">///&lt; 无事件</span>
+    MINOR    = 1,  <span class="cmt">///&lt; 轻微事件（LAF &gt; 85 dB 或上升 &gt; 10 dB 或脉冲 &gt; 6 dB）</span>
+    MODERATE = 2,  <span class="cmt">///&lt; 中度事件（LAF &gt; 95 dB 或上升 &gt; 15 dB）</span>
+    SEVERE   = 3,  <span class="cmt">///&lt; 严重事件（LAF &gt; 110 dB 或脉冲 &gt; 12 dB）</span>
+};</code></pre><div class="csrc">EventResult<code>include/event_detector.hpp:62–81</code><span class="cl">20 行</span></div><pre><code><span class="kw">struct</span> EventResult {
+    EventType event_type{EventType::NONE};  <span class="cmt">///&lt; 最终事件分级</span>
+    <span class="kw">uint8_t</span> severity{0};                    <span class="cmt">///&lt; 严重程度评分 0-100</span>
+
+    <span class="cmt">//=== 四个维度的原始值 ===</span>
+    <span class="kw">float</span> laf_dB{-INFINITY};              <span class="cmt">///&lt; 当前 A 加权 Fast 时间加权 SPL</span>
+    <span class="kw">float</span> las_dB{-INFINITY};              <span class="cmt">///&lt; 当前 A 加权 Slow 时间加权 SPL</span>
+    <span class="kw">float</span> impulse_metric_dB{0.0f};        <span class="cmt">///&lt; LAF − LAS（脉冲指标）</span>
+    <span class="kw">float</span> laf_rise_dB{0.0f};              <span class="cmt">///&lt; LAF(t) − LAF(t−500ms)（上升率）</span>
+    <span class="kw">float</span> background_delta_dB{0.0f};      <span class="cmt">///&lt; LAF − LAeq(5min 背景)</span>
+
+    <span class="cmt">//=== 触发标志（哪几个维度命中）===</span>
+    <span class="kw">bool</span> trigger_laf_threshold{<span class="kw">false</span>};    <span class="cmt">///&lt; D1: LAF 超阈值</span>
+    <span class="kw">bool</span> trigger_impulse{<span class="kw">false</span>};          <span class="cmt">///&lt; D2: 脉冲指标超阈值</span>
+    <span class="kw">bool</span> trigger_onset{<span class="kw">false</span>};            <span class="cmt">///&lt; D3: LAF 上升率超阈值</span>
+    <span class="kw">bool</span> trigger_background{<span class="kw">false</span>};       <span class="cmt">///&lt; D4: 背景对比超阈值</span>
+
+    <span class="cmt">//=== 兼容字段 ===</span>
+    <span class="kw">bool</span> is_overload{<span class="kw">false</span>};              <span class="cmt">///&lt; LZPeak 过载（与旧接口保持一致）</span>
+};</code></pre><div class="csrc">EventDetectorConfig<code>include/event_detector.hpp:97–132</code><span class="cl">36 行</span></div><pre><code><span class="kw">struct</span> EventDetectorConfig {
+    <span class="cmt">//=== 触发阈值（触发灵敏度控制）===</span>
+    <span class="kw">float</span> leq_threshold_db{INFINITY};  <span class="cmt">// [v3.3.0] LZeq trigger disabled; restore to 90.0f to re-enable</span>
+    <span class="kw">float</span> peak_threshold_db{OVERLOAD_THRESHOLD};            <span class="cmt">///&lt; LZpeak 触发阈值 (dB)，默认 140</span>
+    <span class="kw">float</span> underrange_threshold_db{UNDERRANGE_THRESHOLD};    <span class="cmt">///&lt; LZeq 欠量程阈值 (dB)，默认 30</span>
+
+    <span class="cmt">//=== 去抖动参数（防误报控制）===</span>
+    <span class="kw">uint8_t</span> debounce_frames{3};  <span class="cmt">///&lt; 连续 N 帧异常才触发（0 视为 1）</span>
+    <span class="kw">uint8_t</span> cooldown_frames{5};  <span class="cmt">///&lt; 声级触发后 N 帧内不重复 IMPULSE（峰值过载不受限）</span>
+
+    <span class="cmt">//=== 参考声压（保持原有位置，避免位置初始化错位）===</span>
+    <span class="kw">float</span> reference_pressure{REFERENCE_PRESSURE}; <span class="cmt">///&lt; 参考声压 (Pa)</span>
+
+    <span class="cmt">//=== v3.3.3 新增：采样率（供 buf/end 重载计算 α）===</span>
+    <span class="kw">int</span> sample_rate{48000};   <span class="cmt">///&lt; 采样率（Hz）</span>
+
+    <span class="cmt">//=== v3.3.3 新增：LAF/LAS 事件检测阈值（追加在末尾，前向兼容）===</span>
+    <span class="cmt">// D1: LAF 阈值分级（工业噪声合规常用 85/95/110 三档）</span>
+    <span class="kw">float</span> laf_minor_db{85.0f};      <span class="cmt">///&lt; 轻微事件：LAF ≥ 85 dB</span>
+    <span class="kw">float</span> laf_moderate_db{95.0f};   <span class="cmt">///&lt; 中度事件：LAF ≥ 95 dB</span>
+    <span class="kw">float</span> laf_severe_db{110.0f};    <span class="cmt">///&lt; 严重事件：LAF ≥ 110 dB（听力损伤风险）</span>
+
+    <span class="cmt">// D2: 脉冲指标（LAF − LAS）</span>
+    <span class="kw">float</span> impulse_minor_db{6.0f};   <span class="cmt">///&lt; 脉冲事件：LAF−LAS ≥ 6 dB（IEC/商用通用阈值）</span>
+    <span class="kw">float</span> impulse_severe_db{12.0f}; <span class="cmt">///&lt; 严重脉冲：LAF−LAS ≥ 12 dB</span>
+
+    <span class="cmt">// D3: LAF 上升率（相对于 500 ms 前）</span>
+    <span class="kw">float</span> laf_rise_minor_db{10.0f};    <span class="cmt">///&lt; 事件起点：LAF 上升 ≥ 10 dB</span>
+    <span class="kw">float</span> laf_rise_moderate_db{15.0f}; <span class="cmt">///&lt; 中度上升：LAF 上升 ≥ 15 dB</span>
+
+    <span class="cmt">// D4: 背景对比（相对于 5 min 指数平均背景）</span>
+    <span class="kw">float</span> background_delta_db{15.0f};  <span class="cmt">///&lt; 显著事件：LAF − 背景 ≥ 15 dB</span>
+    <span class="kw">float</span> background_tau_s{300.0f};    <span class="cmt">///&lt; 背景平均时间常数（默认 5 min）</span>
+
+    EventDetectorConfig() = default;
+};</code></pre>
+<div class="note"><b>字段命名陷阱</b>峰值字段是 <code>LCPeak</code>（大写 P），不是 <code>LCpeak</code>。<code>LAFmax</code> 已标 deprecated，新代码用 <code>LAF</code>。</div>
+
+<div class="pager"><button data-goto="p10">← 上一页</button><button data-goto="p12">下一页 →</button></div></div><div class="page" id="p12">
+<h2>⚠ 状态连续性 —— 20 Hz 问题的核心</h2>
+<p class="sub">本次排查的结论汇总，也是给固件方的排查依据。</p>
+<h3>状态到底存在哪</h3>
+<div class="csrc">NoiseProcessor 的私有状态成员<code>include/noise_processor.hpp:118–128</code><span class="cl">11 行</span></div><pre><code>     *   - LAF/LAS 指数时间计权状态
+     */
+    <span class="kw">void</span> reset() <span class="kw">noexcept</span> {
+        a_weight_chain_.reset();
+        c_weight_chain_.reset();
+        <span class="kw">for</span> (<span class="kw">auto</span>&amp; bf : band_filters_) bf.reset();
+        reset_time_weighting();
+    }
+
+<span class="kw">private</span>:
+    <span class="kw">int</span> sample_rate_;</code></pre>
+<p><strong>实例活多久，状态就连续多久。</strong></p>
+<h3>实测：三种集成方式在 20 Hz / 50 ms 下的偏差</h3>
+<table><thead><tr><th>方式</th><th>A 偏差</th><th>C 偏差</th></tr></thead><tbody>
+<tr><td><b>M1 单一实例，连续调用</b>（正确）</td><td class="good">+0.10 dB ✅</td><td class="good">+0.02 dB ✅</td></tr>
+<tr><td>M2 每块新建 NoiseProcessor</td><td class="bad">+5.56 dB ✗</td><td class="bad">−1.14 dB ✗</td></tr>
+<tr><td>M3 每块调 apply_*_weighting_inplace()</td><td class="bad">+5.56 dB ✗</td><td class="bad">−1.14 dB ✗</td></tr>
+</tbody></table>
+<h3>误差随窗口长度衰减（IIR 启动瞬态）</h3>
+<table><thead><tr><th>分块</th><th>20 Hz 周期数</th><th>M2 / M3 的 A 偏差</th></tr></thead><tbody>
+<tr><td class="n">50 ms</td><td class="n">1</td><td class="bad">+5.56 dB</td></tr>
+<tr><td class="n">100 ms</td><td class="n">2</td><td>+3.61 dB</td></tr>
+<tr><td class="n">1000 ms</td><td class="n">20</td><td>+0.53 dB</td></tr>
+</tbody></table>
+<div class="warn"><b>为什么 v3.3.4 没发现</b>v3.3.4 验收跑 10 / 100 / 1000 ms 且用连续实例。1 秒窗口有 20 个周期，同样的清零缺陷只剩 0.53 dB —— 刚好落在 Class 1 容差边缘被吞掉。<strong>50 ms 这一档从未被验证过。</strong></div>
+<div class="danger"><b>更隐蔽的情形</b>正确路径下，<strong>第一个块（从零启动）本身就偏 +5.56 dB</strong>，之后才收敛。即「每块重置」的稳态误差 = 「正确路径」的首块误差。若设备每次测量开始重置、或读数取在刚启动 / 刚切档之后，即使代码正确也会看到 4~5 dB。</div>
+<h3>排查清单</h3>
+<ol>
+<li>构造函数调用几次？<b>NoiseProcessor / EventDetector / DoseState 各应为 1</b></li>
+<li>是否调用了 <code>reset()</code>？（三个类都有）</li>
+<li>是否绕过接口直接调了 <code>apply_*_weighting_inplace()</code>？</li>
+<li>固件链接的库是哪个 tag？</li>
+<li><code>duration_s</code> 与 buffer 长度是否精确匹配？</li>
+<li>读数取自连续运行的稳态，还是刚启动之后？</li>
+</ol>
+<div class="ok"><b>回归门禁已就位</b><code>tests/test_state_persistence_matrix.cpp</code> —— 三种集成方式 × 三个窗口。<code>tests/test_weighting_state_persistence.cpp</code> —— 两路径对照，<strong>不一致时返回非零退出码</strong>。</div>
+
+<div class="pager"><button data-goto="p11">← 上一页</button><button data-goto="p13">下一页 →</button></div></div><div class="page" id="p13"><h2>signal_utils 工具库 —— 逐段讲解</h2>
+<p class="sub">24 个自由函数。<b>不参与 process_segment 主链路</b>，用于离线分析与辅助计算。</p>
+<h3>48 kHz 系数装载</h3>
+<div class="seg"><div class="ex"><h4>load_48k_chain / gain_48k_*</h4><p>从 <code>WEIGHTING_TABLE</code> 逐条装入 biquad 系数，并单独返回 1 kHz 增益。</p><p class="key">单一数据源：所有路径共用同一张表，避免副本漂移。</p></div><div class="cd"><div class="csrc"><code>src/signal_utils.cpp:49–82</code><span class="cl">34 行</span></div><pre><code><span class="kw">inline</span> <span class="kw">void</span> load_48k_chain(BiquadChain&lt;A_WEIGHTING_SECTIONS&gt;&amp; chain) {
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; A_WEIGHTING_SECTIONS; ++i) {
+        chain.sections[i] = BiquadCoefficients{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+    }
+    <span class="kw">if</span> (<span class="kw">const</span> <span class="kw">auto</span>* e = find_weighting_entry(48000)) {
+        <span class="kw">for</span> (<span class="kw">int</span> i = 0; i &lt; e-&gt;a_count &amp;&amp; i &lt; static_cast&lt;<span class="kw">int</span>&gt;(A_WEIGHTING_SECTIONS); ++i) {
+            chain.sections[i].b0 = e-&gt;a[i].b0;
+            chain.sections[i].b1 = e-&gt;a[i].b1;
+            chain.sections[i].b2 = e-&gt;a[i].b2;
+            chain.sections[i].a0 = 1.0f;
+            chain.sections[i].a1 = e-&gt;a[i].a1;
+            chain.sections[i].a2 = e-&gt;a[i].a2;
+        }
+    }
+}
+
+<span class="kw">inline</span> <span class="kw">void</span> load_48k_chain(BiquadChain&lt;C_WEIGHTING_SECTIONS&gt;&amp; chain) {
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; C_WEIGHTING_SECTIONS; ++i) {
+        chain.sections[i] = BiquadCoefficients{1.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f};
+    }
+    <span class="kw">if</span> (<span class="kw">const</span> <span class="kw">auto</span>* e = find_weighting_entry(48000)) {
+        <span class="kw">for</span> (<span class="kw">int</span> i = 0; i &lt; e-&gt;c_count &amp;&amp; i &lt; static_cast&lt;<span class="kw">int</span>&gt;(C_WEIGHTING_SECTIONS); ++i) {
+            chain.sections[i].b0 = e-&gt;c[i].b0;
+            chain.sections[i].b1 = e-&gt;c[i].b1;
+            chain.sections[i].b2 = e-&gt;c[i].b2;
+            chain.sections[i].a0 = 1.0f;
+            chain.sections[i].a1 = e-&gt;c[i].a1;
+            chain.sections[i].a2 = e-&gt;c[i].a2;
+        }
+    }
+}
+
+<span class="kw">inline</span> <span class="kw">float</span> gain_48k_a() { <span class="kw">const</span> <span class="kw">auto</span>* e = find_weighting_entry(48000); <span class="kw">return</span> e ? e-&gt;a_gain : 1.0f; }
+<span class="kw">inline</span> <span class="kw">float</span> gain_48k_c() { <span class="kw">const</span> <span class="kw">auto</span>* e = find_weighting_entry(48000); <span class="kw">return</span> e ? e-&gt;c_gain : 1.0f; }</code></pre></div></div>
+<h3>⚠ 两个 inplace 函数 —— 每次调用都 reset</h3>
+<div class="seg"><div class="ex"><h4>apply_a_weighting_inplace()</h4><p class="risk">§ 第 244 行 <code>chain.reset();</code> —— <b>每次调用都清零</b>。</p><p>注释写着 "Streaming A-weighting"，但这一行让它变成「每块从零启动」，流式语义名存实亡。</p><p>实测：与「每块新建 processor」数值完全一致（20 Hz 偏 <b>+5.56 dB</b>）。</p><p class="tip">它本意是给「离线处理整段录音」用的。</p></div><div class="cd"><div class="csrc"><code>src/signal_utils.cpp:239–260</code><span class="cl">22 行</span></div><pre><code><span class="kw">void</span> apply_a_weighting_inplace(<span class="kw">float</span>* data, <span class="kw">size_t</span> count, <span class="kw">float</span> sample_rate) {
+    <span class="kw">if</span> (sample_rate == 48000.0f) {
+        <span class="cmt">// 从 constexpr 主副本拷贝 → 常量初始化，不引入 __cxa_guard 守卫</span>
+        <span class="kw">static</span> BiquadChain&lt;A_WEIGHTING_SECTIONS&gt; chain = A_CHAIN_48K;
+        <span class="kw">const</span> <span class="kw">float</span> g = gain_48k_a();
+        chain.reset();
+        <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; count; ++i) {
+            data[i] = chain.process(data[i]) * g;
+        }
+    } <span class="kw">else</span> {
+        <span class="cmt">// Fallback for non-48kHz: use runtime-designed SOS filters</span>
+        <span class="kw">float</span> g = 1.0f;
+        <span class="kw">auto</span> sos = filter_design::a_weighting_design(sample_rate, &amp;g);
+        <span class="kw">for</span> (<span class="kw">const</span> <span class="kw">auto</span>&amp; coef : sos) {
+            BiquadFilter f(coef);
+            <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; count; ++i) {
+                data[i] = f.process(data[i]);
+            }
+        }
+        <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; count; ++i) { data[i] *= g; }
+    }
+}</code></pre></div></div>
+<div class="seg"><div class="ex"><h4>apply_c_weighting_inplace()</h4><p>同样在第 268 行 <code>chain.reset();</code>。</p><p>但 C 计权在 20 Hz 只衰减 −6.2 dB，极点远离单位圆，瞬态小得多 → 同样缺陷只偏 <b>−1.14 dB</b>，不容易被发现。</p></div><div class="cd"><div class="csrc"><code>src/signal_utils.cpp:263–283</code><span class="cl">21 行</span></div><pre><code><span class="kw">void</span> apply_c_weighting_inplace(<span class="kw">float</span>* data, <span class="kw">size_t</span> count, <span class="kw">float</span> sample_rate) {
+    <span class="kw">if</span> (sample_rate == 48000.0f) {
+        <span class="cmt">// 从 constexpr 主副本拷贝 → 常量初始化，不引入 __cxa_guard 守卫</span>
+        <span class="kw">static</span> BiquadChain&lt;C_WEIGHTING_SECTIONS&gt; chain = C_CHAIN_48K;
+        <span class="kw">const</span> <span class="kw">float</span> g = gain_48k_c();
+        chain.reset();
+        <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; count; ++i) {
+            data[i] = chain.process(data[i]) * g;
+        }
+    } <span class="kw">else</span> {
+        <span class="kw">float</span> g = 1.0f;
+        <span class="kw">auto</span> sos = filter_design::c_weighting_design(sample_rate, &amp;g);
+        <span class="kw">for</span> (<span class="kw">const</span> <span class="kw">auto</span>&amp; coef : sos) {
+            BiquadFilter f(coef);
+            <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; count; ++i) {
+                data[i] = f.process(data[i]);
+            }
+        }
+        <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; count; ++i) { data[i] *= g; }
+    }
+}</code></pre></div></div>
+<h3>批量版本（整段一次性处理，无此问题）</h3>
+<div class="csrc">apply_a_weighting / apply_c_weighting<code>src/signal_utils.cpp:227–236</code><span class="cl">10 行</span></div><pre><code><span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; apply_a_weighting(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal, <span class="kw">float</span> sample_rate) {
+    g_processor.init_a_weighting(sample_rate);
+    <span class="kw">return</span> g_processor.apply_a(signal);
+}
+
+<span class="cmt">// Apply C-weighting filter using proper IEC 61672-1 design</span>
+<span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; apply_c_weighting(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal, <span class="kw">float</span> sample_rate) {
+    g_processor.init_c_weighting(sample_rate);
+    <span class="kw">return</span> g_processor.apply_c(signal);
+}</code></pre>
+<h3>时域统计</h3>
+<div class="csrc">calculate_rms / calculate_leq<code>src/signal_utils.cpp:286–301</code><span class="cl">16 行</span></div><pre><code><span class="kw">float</span> calculate_rms(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal) {
+    <span class="kw">if</span> (signal.empty()) <span class="kw">return</span> 0.0f;
+
+    <span class="kw">float</span> sum_squares = 0.0f;
+    <span class="kw">for</span> (<span class="kw">float</span> x : signal) {
+        sum_squares += x * x;
+    }
+    <span class="kw">return</span> <span class="kw">std</span>::sqrt(sum_squares / signal.size());
+}
+
+<span class="cmt">// Calculate equivalent sound pressure level (Leq)</span>
+<span class="kw">float</span> calculate_leq(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal, <span class="kw">float</span> reference_pressure) {
+    <span class="kw">float</span> rms = calculate_rms(signal);
+    <span class="kw">if</span> (rms &lt;= 0) <span class="kw">return</span> -<span class="kw">std</span>::numeric_limits&lt;<span class="kw">float</span>&gt;::infinity();
+    <span class="kw">return</span> 20.0f * <span class="kw">std</span>::log10(rms / reference_pressure);
+}</code></pre>
+<div class="csrc">calculate_lpeak<code>src/signal_utils.cpp:304–313</code><span class="cl">10 行</span></div><pre><code><span class="kw">float</span> calculate_lpeak(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal, <span class="kw">float</span> reference_pressure) {
+    <span class="kw">if</span> (signal.empty()) <span class="kw">return</span> -<span class="kw">std</span>::numeric_limits&lt;<span class="kw">float</span>&gt;::infinity();
+
+    <span class="kw">float</span> peak = 0.0f;
+    <span class="kw">for</span> (<span class="kw">float</span> x : signal) {
+        peak = <span class="kw">std</span>::max(peak, <span class="kw">std</span>::abs(x));
+    }
+    <span class="kw">if</span> (peak &lt;= 0) <span class="kw">return</span> -<span class="kw">std</span>::numeric_limits&lt;<span class="kw">float</span>&gt;::infinity();
+    <span class="kw">return</span> 20.0f * <span class="kw">std</span>::log10(peak / reference_pressure);
+}</code></pre>
+<div class="seg"><div class="ex"><h4>calculate_kurtosis()</h4><p>支持 Pearson（正态=3）与 excess（正态=0）两种口径。</p><p>用 S1–S4 矩计算，不需要保留波形。</p></div><div class="cd"><div class="csrc"><code>src/signal_utils.cpp:394–421</code><span class="cl">28 行</span></div><pre><code><span class="kw">float</span> calculate_kurtosis(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal, <span class="kw">bool</span> fisher) {
+    <span class="kw">size_t</span> n = signal.size();
+    <span class="kw">if</span> (n &lt; 4) <span class="kw">return</span> fisher ? 0.0f : 3.0f;
+
+    <span class="cmt">// Calculate mean</span>
+    <span class="kw">float</span> mean = <span class="kw">std</span>::accumulate(signal.begin(), signal.end(), 0.0f) / n;
+
+    <span class="cmt">// Calculate moments</span>
+    <span class="kw">float</span> m2 = 0.0f;  <span class="cmt">// Second moment (variance)</span>
+    <span class="kw">float</span> m4 = 0.0f;  <span class="cmt">// Fourth moment</span>
+
+    <span class="kw">for</span> (<span class="kw">float</span> x : signal) {
+        <span class="kw">float</span> d = x - mean;
+        <span class="kw">float</span> d2 = d * d;
+        m2 += d2;
+        m4 += d2 * d2;
+    }
+
+    m2 /= n;
+    m4 /= n;
+
+    <span class="kw">if</span> (m2 &lt;= 0) <span class="kw">return</span> fisher ? 0.0f : 3.0f;
+
+    <span class="cmt">// Pearson kurtosis</span>
+    <span class="kw">float</span> kurtosis = m4 / (m2 * m2);
+
+    <span class="kw">return</span> fisher ? (kurtosis - 3.0f) : kurtosis;
+}</code></pre></div></div>
+<h3>时间计权（离线版）</h3>
+<div class="csrc">time_average<code>src/signal_utils.cpp:316–338</code><span class="cl">23 行</span></div><pre><code><span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; time_average(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal,
+                                   <span class="kw">float</span> sample_rate,
+                                   <span class="kw">float</span> averaging_time_s) {
+    <span class="kw">int</span> samples_per_avg = static_cast&lt;<span class="kw">int</span>&gt;(sample_rate * averaging_time_s);
+    <span class="kw">if</span> (samples_per_avg &lt;= 0) samples_per_avg = 1;
+
+    <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; result;
+
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i + samples_per_avg &lt;= signal.size(); i += samples_per_avg) {
+        <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; window(signal.begin() + i, signal.begin() + i + samples_per_avg);
+        result.push_back(calculate_rms(window));
+    }
+
+    <span class="cmt">// Handle remaining samples</span>
+    <span class="kw">size_t</span> remaining = signal.size() % samples_per_avg;
+    <span class="kw">if</span> (remaining &gt; 0 &amp;&amp; !signal.empty()) {
+        <span class="kw">size_t</span> start = signal.size() - remaining;
+        <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; window(signal.begin() + start, signal.end());
+        result.push_back(calculate_rms(window));
+    }
+
+    <span class="kw">return</span> result;
+}</code></pre>
+<div class="csrc">fast_time_weighting<code>src/signal_utils.cpp:341–355</code><span class="cl">15 行</span></div><pre><code><span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; fast_time_weighting(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal, <span class="kw">float</span> sample_rate) {
+    <span class="kw">float</span> tau = 0.125f;  <span class="cmt">// 125ms</span>
+    <span class="kw">float</span> alpha = <span class="kw">std</span>::exp(-1.0f / (sample_rate * tau));
+
+    <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; result(signal.size());
+    <span class="kw">float</span> y_prev = signal.empty() ? 0.0f : signal[0] * signal[0];
+
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; signal.size(); ++i) {
+        <span class="kw">float</span> x_sq = signal[i] * signal[i];
+        y_prev = alpha * y_prev + (1.0f - alpha) * x_sq;
+        result[i] = <span class="kw">std</span>::sqrt(y_prev);
+    }
+
+    <span class="kw">return</span> result;
+}</code></pre>
+<h3>FFT / IFFT</h3>
+<div class="csrc">fft<code>src/signal_utils.cpp:487–533</code><span class="cl">47 行</span></div><pre><code><span class="kw">std</span>::vector&lt;<span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;&gt; fft(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal) {
+    <span class="kw">size_t</span> N = signal.size();
+
+    <span class="cmt">// Pad to power of 2</span>
+    <span class="kw">size_t</span> N_padded = 1;
+    <span class="kw">while</span> (N_padded &lt; N) N_padded &lt;&lt;= 1;
+
+    <span class="kw">std</span>::vector&lt;<span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;&gt; x(N_padded);
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; N; ++i) {
+        x[i] = <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(signal[i], 0.0f);
+    }
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = N; i &lt; N_padded; ++i) {
+        x[i] = <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;(0.0f, 0.0f);
+    }
+
+    <span class="cmt">// Bit-reversal permutation</span>
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0, j = 0; i &lt; N_padded; ++i) {
+        <span class="kw">if</span> (i &lt; j) <span class="kw">std</span>::swap(x[i], x[j]);
+
+        <span class="kw">size_t</span> bit = N_padded &gt;&gt; 1;
+        <span class="kw">for</span> (; j &amp; bit; bit &gt;&gt;= 1) {
+            j ^= bit;
+        }
+        j ^= bit;
+    }
+
+    <span class="cmt">// Cooley-Tukey FFT</span>
+    <span class="kw">for</span> (<span class="kw">size_t</span> len = 2; len &lt;= N_padded; len &lt;&lt;= 1) {
+        <span class="kw">float</span> ang = noise_const::TWO_PI_F / len;
+        <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt; wlen(<span class="kw">std</span>::cos(ang), <span class="kw">std</span>::sin(ang));
+
+        <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; N_padded; i += len) {
+            <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt; w(1.0f, 0.0f);
+            <span class="kw">for</span> (<span class="kw">size_t</span> j = 0; j &lt; len / 2; ++j) {
+                <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt; u = x[i + j];
+                <span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt; v = x[i + j + len / 2] * w;
+                x[i + j] = u + v;
+                x[i + j + len / 2] = u - v;
+                w *= wlen;
+            }
+        }
+    }
+
+    <span class="cmt">// Return only original size (remove padding)</span>
+    x.resize(N);
+    <span class="kw">return</span> x;
+}</code></pre>
+<div class="csrc">ifft<code>src/signal_utils.cpp:536–552</code><span class="cl">17 行</span></div><pre><code><span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; ifft(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;&gt;&amp; spectrum) {
+    <span class="kw">size_t</span> N = spectrum.size();
+
+    <span class="cmt">// Conjugate</span>
+    <span class="kw">std</span>::vector&lt;<span class="kw">std</span>::complex&lt;<span class="kw">float</span>&gt;&gt; x(N);
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; N; ++i) {
+        x[i] = <span class="kw">std</span>::conj(spectrum[i]);
+    }
+
+    <span class="cmt">// Forward FFT (simplified - just return real parts)</span>
+    <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; result(N);
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; N; ++i) {
+        result[i] = x[i].real();
+    }
+
+    <span class="kw">return</span> result;
+}</code></pre>
+<h3>滤波器封装</h3>
+<div class="csrc">apply_iir_filter / bandpass / highpass / lowpass<code>src/signal_utils.cpp:556–594</code><span class="cl">39 行</span></div><pre><code><span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; apply_iir_filter(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal,
+                                      <span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; b,
+                                      <span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; a) {
+    IIRFilter filter(b, a);
+    <span class="kw">return</span> filter.process(signal);
+}
+
+<span class="cmt">// Bandpass filter design and application</span>
+<span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; bandpass_filter(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal,
+                                     <span class="kw">float</span> sample_rate,
+                                     <span class="kw">float</span> low_freq,
+                                     <span class="kw">float</span> high_freq) {
+    <span class="kw">auto</span> coef = filter_design::bandpass(low_freq, high_freq, sample_rate, 4);
+
+    IIRFilter filter(coef.b, coef.a);
+    <span class="kw">return</span> filter.process(signal);
+}
+
+<span class="cmt">// Highpass filter</span>
+<span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; highpass_filter(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal,
+                                    <span class="kw">float</span> sample_rate,
+                                    <span class="kw">float</span> cutoff_freq,
+                                    <span class="kw">int</span> order) {
+    <span class="kw">auto</span> coef = filter_design::butterworth(order, cutoff_freq, sample_rate, "high");
+
+    IIRFilter filter(coef.b, coef.a);
+    <span class="kw">return</span> filter.process(signal);
+}
+
+<span class="cmt">// Lowpass filter</span>
+<span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; lowpass_filter(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal,
+                                   <span class="kw">float</span> sample_rate,
+                                   <span class="kw">float</span> cutoff_freq,
+                                   <span class="kw">int</span> order) {
+    <span class="kw">auto</span> coef = filter_design::butterworth(order, cutoff_freq, sample_rate, "low");
+
+    IIRFilter filter(coef.b, coef.a);
+    <span class="kw">return</span> filter.process(signal);
+}</code></pre>
+<h3>频谱与功率谱密度</h3>
+<div class="csrc">calculate_spectrum<code>src/signal_utils.cpp:597–616</code><span class="cl">20 行</span></div><pre><code><span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; calculate_spectrum(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal,
+                                      <span class="kw">float</span> sample_rate,
+                                      <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; frequencies) {
+    <span class="kw">auto</span> spec = fft(signal);
+
+    <span class="kw">size_t</span> n = spec.size();
+    <span class="kw">size_t</span> n_freq = n / 2 + 1;
+
+    <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; magnitude(n_freq);
+    frequencies.resize(n_freq);
+
+    <span class="kw">float</span> df = sample_rate / n;  <span class="cmt">// Frequency resolution</span>
+
+    <span class="kw">for</span> (<span class="kw">size_t</span> i = 0; i &lt; n_freq; ++i) {
+        magnitude[i] = <span class="kw">std</span>::abs(spec[i]) / n;  <span class="cmt">// Normalize</span>
+        frequencies[i] = static_cast&lt;<span class="kw">float</span>&gt;(i) * df;
+    }
+
+    <span class="kw">return</span> magnitude;
+}</code></pre>
+<div class="csrc">calculate_psd<code>src/signal_utils.cpp:619–632</code><span class="cl">14 行</span></div><pre><code><span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt; calculate_psd(<span class="kw">const</span> <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; signal,
+                                 <span class="kw">float</span> sample_rate,
+                                 <span class="kw">std</span>::vector&lt;<span class="kw">float</span>&gt;&amp; frequencies) {
+    <span class="kw">auto</span> magnitude = calculate_spectrum(signal, sample_rate, frequencies);
+
+    <span class="cmt">// PSD = |FFT|^2 / (N * fs)</span>
+    <span class="kw">float</span> scale = 1.0f / (signal.size() * sample_rate);
+
+    <span class="kw">for</span> (<span class="kw">auto</span>&amp; m : magnitude) {
+        m = m * m / scale;
+    }
+
+    <span class="kw">return</span> magnitude;
+}</code></pre>
+<div class="note"><b>测试盲区</b><code>tests/</code> 与 <code>examples/</code> 中<strong>零调用</strong>那两个 inplace 函数 —— 16 个测试文件全部只走 <code>process_segment()</code>。这是该缺陷长期未被发现的原因。</div>
+<div class="pager"><button data-goto="p12">← 上一页</button><button data-goto="p14">下一页 →</button></div></div><div class="page" id="p14">
+<h2>工具与验证链</h2>
+<p class="sub">不参与运行时，但决定系数正确性与精度可复现性。</p>
+<h3>tools/ (10)</h3>
+<table><thead><tr><th>文件</th><th>作用</th></tr></thead><tbody>
+<tr><td class="n">regen_weighting_coefficients.py</td><td><b>A/C 计权系数生成器</b> → WEIGHTING_TABLE</td></tr>
+<tr><td class="n">regen_bandpass_coefficients.py</td><td>9 个 1/3 倍频程系数生成器</td></tr>
+<tr><td class="n">generate_bandpass_coeffs.cpp</td><td>带通系数 C++ 生成</td></tr>
+<tr><td class="n">probe_bands_v3.3.1.cpp</td><td>频带响应探针</td></tr>
+<tr><td class="n">probe_bandsum_v3.3.1.cpp</td><td>频带求和校验</td></tr>
+<tr><td class="n">probe_band_enbw_v3.3.1.py</td><td>等效噪声带宽</td></tr>
+<tr><td class="n">probe_coverage_deficit_v3.3.1.py</td><td>覆盖缺口分析</td></tr>
+<tr><td class="n">probe_true_octave_gap_v3.3.1.py</td><td>真实倍频程缺口（含 part2）</td></tr>
+<tr><td class="n">gen_bp</td><td>已编译带通生成器</td></tr>
+</tbody></table>
+<h3>tests/ (17) 按主题</h3>
+<table><thead><tr><th>主题</th><th>文件</th></tr></thead><tbody>
+<tr><td><b>计权精度</b></td><td class="n">test_class1_precision.cpp · test_weighting_response.cpp · test_a_weighting_v3.3.1.py · test_c_weighting_v3.3.3.cpp</td></tr>
+<tr><td><b>状态持久性</b></td><td class="n">test_state_persistence_matrix.cpp · test_weighting_state_persistence.cpp</td></tr>
+<tr><td><b>处理器</b></td><td class="n">test_noise_processor.cpp · test_end_to_end.cpp · test_v3.3.2_laeq_validation.cpp</td></tr>
+<tr><td><b>事件检测</b></td><td class="n">test_event_detector.cpp · test_event_detector_v3.3.3.cpp · test_event_buf_api_v3.3.3.cpp · test_event_longrun_v3.3.3.cpp · test_event_on_wav_v3.3.3.cpp</td></tr>
+<tr><td><b>剂量</b></td><td class="n">test_dose_state.cpp</td></tr>
+<tr><td><b>其他</b></td><td class="n">test_kurtosis_wav.cpp · test_full_suite_v3.3.1.py</td></tr>
+</tbody></table>
+<h3>explainer/ —— 本文档的生成器</h3>
+<table><thead><tr><th>文件</th><th>作用</th></tr></thead><tbody>
+<tr><td class="n">gen_arch.py</td><td>按行号提取源码 + 定义分段 + 生成页面内容 → <code>/tmp/arch_pages.pkl</code></td></tr>
+<tr><td class="n">assemble.py</td><td>注入 CSS / SVG 架构图，组装成 <code>ARCHITECTURE.html</code></td></tr>
+<tr><td class="n">build.sh</td><td>一键重建</td></tr>
+<tr><td class="n">README.md</td><td>使用说明与维护约定</td></tr>
+</tbody></table>
+<div class="ok"><b>重建方式</b><code>cd explainer &amp;&amp; ./build.sh</code></div>
+<div class="note"><b>为什么用生成器而不是手写</b>本文件 <b>200 KB+</b>、引用源码 <b>2000+ 行</b>。手写必然出现漂移；生成器在开头做 <b>13 项锚点校验</b>（如 <code>noise_processor.cpp:126</code> 必须含 <code>process_segment</code>），任何行号错位立即中止，保证文档与源码永远一致。</div>
+
+<div class="pager"><button data-goto="p13">← 上一页</button><button data-goto="p1">返回架构图 →</button></div></div>
+<script>
+(function(){
+  const PAGES = [['p1', '① 架构图'], ['p2', '② 项目全貌'], ['p3', '③ 它是什么'], ['p4', '④ 固件集成'], ['p5', '⑤ 接口一 process_segment'], ['p6', '⑥ 接口二 aggregate'], ['p7', '⑦ 接口三 EventDetector'], ['p8', '⑧ 接口四 DoseState'], ['p9', '⑨ 滤波基础设施'], ['p10', '⑩ 系数与设计算法'], ['p11', '⑪ 数据结构'], ['p12', '⚠ 状态连续性'], ['p13', '⑫ signal_utils'], ['p14', '⑬ 工具与验证']];
+  const tabs = document.getElementById('tabs');
+  PAGES.forEach(function(p){
+    var b=document.createElement('button');
+    b.textContent=p[1]; b.dataset.goto=p[0]; tabs.appendChild(b);
+  });
+  function show(id, push){
+    if(!document.getElementById(id)) id='p1';
+    document.querySelectorAll('.page').forEach(function(p){p.classList.toggle('on', p.id===id);});
+    tabs.querySelectorAll('button').forEach(function(b){b.classList.toggle('on', b.dataset.goto===id);});
+    if(push) history.replaceState(null,'','#'+id);
+    requestAnimationFrame(function(){window.scrollTo(0,0);});
+  }
+  document.addEventListener('click', function(e){
+    var t=e.target.closest('[data-goto]'); if(!t) return;
+    e.preventDefault(); show(t.dataset.goto, true);
+  });
+  window.addEventListener('hashchange', function(){ show(location.hash.slice(1), false); });
+  show(location.hash.slice(1) || 'p1', false);
+  window.addEventListener('load', function(){window.scrollTo(0,0);});
+})();
+</script>
+</body>
+</html>
