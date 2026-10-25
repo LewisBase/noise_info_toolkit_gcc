@@ -39,3 +39,7 @@ venv/
 # syncnas 工具配置（本地专属，不入库）
 .syncnasrc
 .syncignore
+
+# Archify 生成产物（本地专属，不入库）
+# 草稿、HTML 与校验回执都是可再生成的中间物；需要共享时单文件拷贝出去
+.archify/
